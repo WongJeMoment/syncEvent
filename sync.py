@@ -77,6 +77,19 @@ def setup_camera(serial, cam_mode):
 
 def main():
     threads = []
+    # lc = threading.Thread(target=setup_camera, args=("00051195","slave"))
+    # lc.start()
+    # threads.append(lc)
+    # time.sleep(1)  # 小延迟以防初始化冲突
+    # rc = threading.Thread(target=setup_camera, args=("00051197","master"))
+    # rc.start()
+    # threads.append(rc)
+    #
+    # for lc in threads:
+    #     lc.join()
+    #     rc.join()
+
+
     for config in CAMERA_CONFIGS:
         t = threading.Thread(target=setup_camera, args=(config["serial"], config["mode"]))
         t.start()
