@@ -5,7 +5,7 @@ import os
 import cv2
 
 sys.path.append("/usr/lib/python3/dist-packages/")
-
+# save video
 from metavision_core.event_io import EventsIterator
 from metavision_core.event_io.raw_reader import initiate_device
 from metavision_sdk_core import PeriodicFrameGenerationAlgorithm, ColorPalette
