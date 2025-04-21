@@ -1,15 +1,18 @@
+import os
 import torch
 from torch.utils.data import DataLoader
 import torch.nn.functional as F
 from config import *
 from dataset import HeatmapDataset
-from model import HeatmapNet
+from model import HeatmapUNet  # or HeatmapNet
 import matplotlib.pyplot as plt
 import numpy as np
+
 
 def custom_collate_fn(batch):
     imgs, heatmaps = zip(*batch)
     return list(imgs), list(heatmaps)
+
 
 def train():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -17,8 +20,12 @@ def train():
     dataset = HeatmapDataset(TRAIN_IMAGE_DIR, TRAIN_LABEL_DIR)
     loader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True, collate_fn=custom_collate_fn)
 
-    model = HeatmapNet(num_keypoints=8).to(device)
+    model = HeatmapUNet(num_keypoints=8).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=LR)
+
+    os.makedirs("checkpoints", exist_ok=True)
+    best_dist = float('inf')
+    best_model_path = "checkpoints/best_model.pt"
 
     for epoch in range(EPOCHS):
         model.train()
@@ -40,7 +47,6 @@ def train():
                 optimizer.step()
                 total_loss += loss.item()
 
-                # === 准确率估计 ===
                 acc, dist = accuracy_from_heatmaps(pred, heatmap)
                 total_dist += dist
                 total_keypoints += acc
@@ -48,10 +54,18 @@ def train():
         avg_dist = total_dist / (total_keypoints + 1e-6)
         print(f"[Epoch {epoch+1}] Loss: {total_loss:.4f} | Avg Distance: {avg_dist:.2f}")
 
-        # 可视化当前 epoch 最后一个样本
+        # 可视化最后一个样本
         visualize(img[0].cpu(), heatmap[0].cpu(), pred[0].cpu())
 
-# 匹配通道数
+        # ✅ 只保留当前最佳模型，删除旧的
+        if avg_dist < best_dist:
+            best_dist = avg_dist
+            if os.path.exists(best_model_path):
+                os.remove(best_model_path)
+            torch.save(model.state_dict(), best_model_path)
+            print(f"✅ Best model saved at epoch {epoch+1} (Avg Dist: {avg_dist:.2f})")
+
+
 def match_channels(pred, heatmap):
     _, c_pred, h, w = pred.shape
     _, c_gt, _, _ = heatmap.shape
@@ -63,7 +77,7 @@ def match_channels(pred, heatmap):
         pad = torch.zeros((1, c_gt - c_pred, h, w), device=pred.device, dtype=pred.dtype)
         return torch.cat([pred, pad], dim=1)
 
-# 计算预测 vs GT 的关键点距离
+
 def accuracy_from_heatmaps(pred, gt):
     pred_coords = extract_peak_coords(pred)
     gt_coords = extract_peak_coords(gt)
@@ -75,16 +89,16 @@ def accuracy_from_heatmaps(pred, gt):
         dist += np.linalg.norm([px - gx, py - gy])
     return count, dist
 
-# 提取每个 heatmap 的最大值坐标
+
 def extract_peak_coords(heatmap_tensor):
-    heatmap_np = heatmap_tensor.squeeze(0).detach().cpu().numpy()  # [K, H, W]
+    heatmap_np = heatmap_tensor.squeeze(0).detach().cpu().numpy()
     coords = []
     for hm in heatmap_np:
         y, x = np.unravel_index(np.argmax(hm), hm.shape)
         coords.append((x, y))
     return coords
 
-# 可视化图像 + GT + 预测
+
 def visualize(img, gt_heatmap, pred_heatmap):
     img = img.permute(1, 2, 0).cpu().numpy()
     gt_vis = gt_heatmap.sum(dim=0).detach().cpu().numpy()
@@ -104,3 +118,5 @@ def visualize(img, gt_heatmap, pred_heatmap):
     plt.imshow(pred_vis, cmap='hot')
     plt.tight_layout()
     plt.show()
+
+

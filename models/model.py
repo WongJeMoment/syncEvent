@@ -18,7 +18,7 @@ class DoubleConv(nn.Module):
     def forward(self, x):
         return self.conv(x)
 
-class HeatmapNet(nn.Module):
+class HeatmapUNet(nn.Module):
     def __init__(self, num_keypoints):
         super().__init__()
 
