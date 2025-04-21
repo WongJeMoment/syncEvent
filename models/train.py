@@ -3,15 +3,19 @@ import torch
 from torch.utils.data import DataLoader
 import torch.nn.functional as F
 from config import *
-from dataset import KeypointDataset
+from dataset import HeatmapDataset, infer_num_keypoints
 from model import HeatmapNet
 
 def train():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    dataset = KeypointDataset(TRAIN_IMAGE_DIR, TRAIN_LABEL_DIR)
+
+    # 推断关键点数目
+    num_keypoints = infer_num_keypoints(TRAIN_LABEL_DIR)
+
+    dataset = HeatmapDataset(TRAIN_IMAGE_DIR, TRAIN_LABEL_DIR)
     loader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True)
 
-    model = HeatmapNet(NUM_KEYPOINTS).to(device)
+    model = HeatmapNet(num_keypoints).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=LR)
 
     for epoch in range(EPOCHS):
