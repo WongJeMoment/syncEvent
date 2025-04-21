@@ -119,4 +119,5 @@ def visualize(img, gt_heatmap, pred_heatmap):
     plt.tight_layout()
     plt.show()
 
-
+if __name__ == "__main__":
+    train()
