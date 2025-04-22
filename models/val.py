@@ -107,23 +107,34 @@ def visualize(img, gt_heatmap, pred_heatmap, save_path=None):
     gt_vis = gt_heatmap.sum(dim=0).detach().cpu().numpy()
     pred_vis = pred_heatmap.sum(dim=0).detach().cpu().numpy()
 
+    pred_coords = extract_peak_coords(pred_heatmap.unsqueeze(0))  # B, K, H, W → list of (x, y)
+
     plt.figure(figsize=(12, 4))
+
+    # 原图
     plt.subplot(1, 3, 1)
     plt.title("Image")
     plt.imshow(img)
 
+    # GT 热图
     plt.subplot(1, 3, 2)
     plt.title("GT Heatmap")
     plt.imshow(gt_vis, cmap='hot')
 
+    # Pred 热图 + 标注点
     plt.subplot(1, 3, 3)
     plt.title("Pred Heatmap")
     plt.imshow(pred_vis, cmap='hot')
+
+    for i, (x, y) in enumerate(pred_coords):
+        plt.scatter(x, y, color='lime', s=30)
+        plt.text(x + 2, y - 2, str(i), color='lime', fontsize=8)
+
     plt.tight_layout()
 
     if save_path:
         plt.savefig(save_path)
-        print(f"✅ Saved visualization: {save_path}")
+        print(f"✅ Saved visualization with keypoints: {save_path}")
         plt.close()
     else:
         plt.show()
