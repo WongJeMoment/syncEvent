@@ -1,0 +1,9 @@
+# config.py
+IMG_SIZE = 256
+BATCH_SIZE = 8
+EPOCHS = 30
+LR = 1e-3
+
+IMAGE_DIR = ""
+EDGE_DIR = ""
+CHECKPOINT_PATH = ""
