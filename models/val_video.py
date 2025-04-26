@@ -20,19 +20,41 @@ def match_channels(pred, heatmap):
         return torch.cat([pred, pad], dim=1)
 
 
-def extract_peak_coords(heatmap_tensor, orig_size=None):
+def extract_peak_coords(heatmap_tensor, orig_size=None, threshold=0.2, distance=10):
     heatmap_np = heatmap_tensor.squeeze(0).detach().cpu().numpy()
     coords = []
     for hm in heatmap_np:
-        y, x = np.unravel_index(np.argmax(hm), hm.shape)
-        if orig_size is not None:
-            scale_x = orig_size[1] / hm.shape[1]
-            scale_y = orig_size[0] / hm.shape[0]
-            x = int(x * scale_x)
-            y = int(y * scale_y)
-        coords.append((x, y))
-    return coords
+        # 找所有大于阈值的位置
+        keypoints = []
+        mask = hm > threshold
+        ys, xs = np.where(mask)
 
+        for x, y in zip(xs, ys):
+            keypoints.append((x, y, hm[y, x]))
+
+        # 根据响应值从大到小排序
+        keypoints.sort(key=lambda k: k[2], reverse=True)
+
+        # NMS 过滤
+        selected = []
+        for x, y, score in keypoints:
+            too_close = False
+            for sel_x, sel_y in selected:
+                if np.hypot(x - sel_x, y - sel_y) < distance:
+                    too_close = True
+                    break
+            if not too_close:
+                selected.append((x, y))
+
+        # 选出来的点，缩放回原图
+        for (x, y) in selected:
+            if orig_size is not None:
+                scale_x = orig_size[1] / hm.shape[1]
+                scale_y = orig_size[0] / hm.shape[0]
+                x = int(x * scale_x)
+                y = int(y * scale_y)
+            coords.append((x, y))
+    return coords
 
 def visualize_keypoints(img, keypoints):
     for x, y in keypoints:
@@ -83,5 +105,5 @@ def val_video(video_path):
 
 if __name__ == "__main__":
     # 自己换成你的视频路径～
-    video_path = "/home/wangzhe/ICRA2025/MY/demo/left.mp4"
+    video_path = "/home/wangzhe/ICRA2025/MY/demo/right.mp4"
     val_video(video_path)
