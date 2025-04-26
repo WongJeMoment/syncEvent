@@ -11,6 +11,12 @@ def infer_num_keypoints(heatmap_dir):
     heatmap = np.load(os.path.join(heatmap_dir, sample_file))
     return heatmap.shape[0]  # channel 数 == 关键点数量
 
+def preprocess_image(img):
+    img = cv2.resize(img, (IMG_SIZE, IMG_SIZE))
+    img = img / 255.0
+    img = img.transpose(2, 0, 1)  # HWC -> CHW
+    return img.astype(np.float32)
+
 class HeatmapDataset(Dataset):
     def __init__(self, image_dir, heatmap_dir):
         self.image_paths = sorted([
