@@ -123,9 +123,12 @@ def extract_peak_coords(heatmap_tensor, orig_size=None, threshold=0.15, nms_radi
 
 # --------- 可视化函数 ---------
 def visualize_keypoints(img, keypoints):
-    for x, y in keypoints:
-        cv2.circle(img, (x, y), 5, (0, 255, 0), -1)
+    for idx, (x, y) in enumerate(keypoints):
+        cv2.circle(img, (x, y), 5, (0, 255, 0), -1)  # 绿色小圆
+        cv2.putText(img, str(idx), (x + 8, y - 8), cv2.FONT_HERSHEY_SIMPLEX,
+                    0.6, (0, 0, 255), 2)  # 红色数字编号，稍微偏一点防止挡住点
     return img
+
 
 # --------- 主程序 ---------
 def val_video(video_path):
