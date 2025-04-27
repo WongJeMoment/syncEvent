@@ -22,6 +22,28 @@ def solve_pnp(object_points, image_points, camera_matrix, dist_coeffs=None):
 
     return rvec, tvec
 
+def draw_cube_with_keypoints(img, imgpts, keypoints):
+    imgpts = np.int32(imgpts).reshape(-1, 2)
+
+    # 画底面
+    img = cv2.drawContours(img, [imgpts[:4]], -1, (0, 255, 0), 2)
+
+    # 画立柱
+    for i, j in zip(range(4), range(4, 8)):
+        img = cv2.line(img, tuple(imgpts[i]), tuple(imgpts[j]), (255, 0, 0), 2)
+
+    # 画顶面
+    img = cv2.drawContours(img, [imgpts[4:]], -1, (0, 0, 255), 2)
+
+    # 画关键点
+    for idx, (x, y) in enumerate(keypoints):
+        x, y = int(x), int(y)
+        cv2.circle(img, (x, y), 5, (0, 255, 255), -1)  # 黄色圆圈
+        cv2.putText(img, str(idx), (x + 8, y - 8), cv2.FONT_HERSHEY_SIMPLEX,
+                    0.6, (255, 0, 255), 2)  # 紫色编号
+
+    return img
+
 
 # --------- 主程序 ---------
 def main():
@@ -79,11 +101,21 @@ def main():
     # 求PnP
     try:
         rvec, tvec = solve_pnp(object_points, image_points, camera_matrix)
+        imgpts, _ = cv2.projectPoints(object_points, rvec, tvec, camera_matrix, None)
+
+        # 在原图上画出立方体
+        frame_with_cube = draw_cube_with_keypoints(frame.copy(), imgpts, keypoints)
+
+        # 显示出来
+        cv2.imshow("Pose Visualization", frame_with_cube)
+        cv2.waitKey(0)
+        cv2.destroyAllWindows()
         print("✅ 姿态估计成功！")
         print("旋转向量 rvec：\n", rvec)
         print("平移向量 tvec：\n", tvec)
     except ValueError as e:
         print(str(e))
+
 
 
 if __name__ == "__main__":
