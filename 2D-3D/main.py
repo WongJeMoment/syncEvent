@@ -2,6 +2,7 @@ import os
 import cv2
 import torch
 import numpy as np
+import json
 
 from models.model import HeatmapUNet
 from models.config import *
@@ -10,8 +11,35 @@ from models.val_video import extract_peak_coords
 
 from epnp_solver import select_epnp_four_points, solve_pnp_epnp
 from camera_config import get_camera_matrix
-from object_model import get_cube_model_points
 from visualization import draw_cube_with_keypoints
+from stl import mesh
+
+def draw_projected_stl_on_image(img, stl_path, rvec, tvec, camera_matrix):
+    """
+    将 STL 模型根据姿态投影到图像中并绘制
+    """
+    your_mesh = mesh.Mesh.from_file(stl_path)
+    projected_img = img.copy()
+
+    for triangle in your_mesh.vectors:
+        # Project each vertex
+        imgpts, _ = cv2.projectPoints(triangle, rvec, tvec, camera_matrix, None)
+        pts = np.int32(imgpts).reshape(-1, 2)
+
+        # Draw triangle
+        cv2.polylines(projected_img, [pts], isClosed=True, color=(0, 255, 0), thickness=1)
+
+    return projected_img
+
+def load_model_points_from_json(json_path):
+    """
+    从 JSON 文件中加载 3D 模型点及其 ID
+    """
+    with open(json_path, "r") as f:
+        data = json.load(f)
+    ids = [d["id"] for d in data]
+    points = np.array([[d["x"], d["y"], d["z"]] for d in data], dtype=np.float32)
+    return points, ids
 
 def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -23,7 +51,7 @@ def main():
     model.load_state_dict(torch.load(best_model_path, map_location=device))
     model.eval()
 
-    # 读图
+    # 读取图像
     img_path = "/home/wangzhe/ICRA2025/MY/data/frame/1.jpg"
     assert os.path.exists(img_path), "图片文件不存在！"
 
@@ -42,26 +70,43 @@ def main():
         print(f"⚠️ 检测到的角点数量不足8个，目前是{len(keypoints)}个，PnP可能失败！")
         return
 
+    # 加载模型 3D 角点（含 ID）
+    model_json_path = "/home/wangzhe/ICRA2025/MY/STL/cube.json"
+    object_points, object_ids = load_model_points_from_json(model_json_path)
+
+    # 选择用于EPnP的图像关键点（4个）
     image_points = select_epnp_four_points(keypoints)
-    object_points = get_cube_model_points()
 
-    selected_object_points = np.array([
-        object_points[4],  # 点6 (右下后)
-        object_points[0],  # 点0 (左上前)
-        object_points[1],  # 点1 (右上前)
-        object_points[2],  # 点2 (右下前)
-    ], dtype=np.float32)
-
-    camera_matrix = get_camera_matrix(orig_w, orig_h)
+    # 对应的四个3D点 ID（你之前手动设定的 6, 0, 1, 2）
+    selected_object_ids = [4, 5, 1, 2]
 
     try:
+        # 根据 ID 映射出4个对应的 3D 点
+        selected_object_points = np.array(
+            [object_points[object_ids.index(i)] for i in selected_object_ids],
+            dtype=np.float32
+        )
+
+        # 相机参数
+        camera_matrix = get_camera_matrix(orig_w, orig_h)
+
+        # PnP求解
         rvec, tvec = solve_pnp_epnp(selected_object_points, image_points, camera_matrix)
 
+        # 投影3D点用于画图
         imgpts, _ = cv2.projectPoints(object_points, rvec, tvec, camera_matrix, None)
 
+        # 可视化结果
+        # 画出 cube 边框和关键点
         frame_with_cube = draw_cube_with_keypoints(frame.copy(), imgpts, keypoints)
 
-        cv2.imshow("Pose Visualization (EPnP)", frame_with_cube)
+        # 画出姿态变换后的 STL 模型
+        stl_path = "/home/wangzhe/ICRA2025/MY/STL/cube.STL"  # 替换为你的 STL 路径
+        frame_with_stl = draw_projected_stl_on_image(frame_with_cube, stl_path, rvec, tvec, camera_matrix)
+
+        # 显示最终图像
+        cv2.imshow("Pose Visualization with STL", frame_with_stl)
+
         cv2.waitKey(0)
         cv2.destroyAllWindows()
 
@@ -70,7 +115,7 @@ def main():
         print("平移向量 tvec：\n", tvec)
 
     except ValueError as e:
-        print(str(e))
+        print("❌ PnP失败：", str(e))
 
 if __name__ == "__main__":
     main()
