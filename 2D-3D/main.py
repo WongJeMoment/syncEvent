@@ -13,6 +13,8 @@ from epnp_solver import select_epnp_four_points, solve_pnp_epnp
 from camera_config import get_camera_matrix
 from visualization import draw_cube_with_keypoints
 from stl import mesh
+from keypoint_map import IMAGE_TO_STL_ID, EPnP_INDEXES
+
 
 def draw_projected_stl_on_image(img, stl_path, rvec, tvec, camera_matrix):
     """
@@ -27,7 +29,7 @@ def draw_projected_stl_on_image(img, stl_path, rvec, tvec, camera_matrix):
         pts = np.int32(imgpts).reshape(-1, 2)
 
         # Draw triangle
-        cv2.polylines(projected_img, [pts], isClosed=True, color=(0, 255, 0), thickness=1)
+        cv2.polylines(projected_img, [pts], isClosed=True, color=(0, 255, 0), thickness=2)
 
     return projected_img
 
@@ -75,10 +77,9 @@ def main():
     object_points, object_ids = load_model_points_from_json(model_json_path)
 
     # 选择用于EPnP的图像关键点（4个）
-    image_points = select_epnp_four_points(keypoints)
+    image_points = np.array([keypoints[i] for i in EPnP_INDEXES], dtype=np.float32)
 
-    # 对应的四个3D点 ID（你之前手动设定的 6, 0, 1, 2）
-    selected_object_ids = [4, 5, 1, 2]
+    selected_object_ids = [IMAGE_TO_STL_ID[i] for i in EPnP_INDEXES]
 
     try:
         # 根据 ID 映射出4个对应的 3D 点
