@@ -33,6 +33,6 @@ def video_to_frames(video_path, output_folder):
     print(f"✅ 全部完成！总共保存了 {frame_count} 帧。")
 
 if __name__ == "__main__":
-    video_path = "/home/wangzhe/ICRA2025/MY/video/slave_00051195.avi"   # <-- 换成你的avi视频路径
-    output_folder = "/home/wangzhe/ICRA2025/MY/video/slave_00051195" # <-- 换成你想要保存帧的文件夹
+    video_path = "/home/wangzhe/ICRA2025/MY/video/master_00051197.avi"   # <-- 换成你的avi视频路径
+    output_folder = "/home/wangzhe/ICRA2025/MY/video/master_00051197" # <-- 换成你想要保存帧的文件夹
     video_to_frames(video_path, output_folder)

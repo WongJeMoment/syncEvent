@@ -65,7 +65,7 @@ def setup_camera(serial, cam_mode):
                 window.set_close_flag()
         window.set_keyboard_callback(keyboard_cb)
 
-        frame_gen = PeriodicFrameGenerationAlgorithm(width, height, fps=30, palette=ColorPalette.CoolWarm)
+        frame_gen = PeriodicFrameGenerationAlgorithm(width, height, fps=300, palette=ColorPalette.CoolWarm)
 
         def on_frame_cb(ts, frame):
             nonlocal video_writer
