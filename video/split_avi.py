@@ -34,5 +34,5 @@ def video_to_frames(video_path, output_folder):
 
 if __name__ == "__main__":
     video_path = "/home/wangzhe/ICRA2025/MY/video/master_00051197.avi"   # <-- 换成你的avi视频路径
-    output_folder = "/home/wangzhe/ICRA2025/MY/video/master_00051197" # <-- 换成你想要保存帧的文件夹
+    output_folder = "/home/wangzhe/ICRA2025/MY/video/part2_master1" # <-- 换成你想要保存帧的文件夹
     video_to_frames(video_path, output_folder)

@@ -41,6 +41,8 @@ def train():
                 pred = model(img)
                 pred = match_channels(pred, heatmap)
 
+                pred = F.interpolate(pred, size=heatmap.shape[-2:], mode='bilinear', align_corners=False)
+
                 loss = F.mse_loss(pred, heatmap)
                 optimizer.zero_grad()
                 loss.backward()

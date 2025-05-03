@@ -36,7 +36,7 @@ def train():
     print(f"🚀 Using device: {device}")
 
     dataset = EdgeDataset()
-    dataloader = DataLoader(dataset, batch_size=1,
+    dataloader = DataLoader(dataset, batch_size=5,
                             shuffle=True)  # Set batch size to 1 for processing one image at a time
 
     model = EdgeNet().to(device)

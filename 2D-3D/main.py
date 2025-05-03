@@ -73,7 +73,7 @@ def main():
         return
 
     # 加载模型 3D 角点（含 ID）
-    model_json_path = "/home/wangzhe/ICRA2025/MY/STL/cube.json"
+    model_json_path = "/STL/cube/cube.json"
     object_points, object_ids = load_model_points_from_json(model_json_path)
 
     # 选择用于EPnP的图像关键点（4个）
@@ -102,7 +102,7 @@ def main():
         frame_with_cube = draw_cube_with_keypoints(frame.copy(), imgpts, keypoints)
 
         # 画出姿态变换后的 STL 模型
-        stl_path = "/home/wangzhe/ICRA2025/MY/STL/cube.STL"  # 替换为你的 STL 路径
+        stl_path = "/STL/cube/cube.STL"  # 替换为你的 STL 路径
         frame_with_stl = draw_projected_stl_on_image(frame_with_cube, stl_path, rvec, tvec, camera_matrix)
 
         # 显示最终图像

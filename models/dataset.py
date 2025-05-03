@@ -32,10 +32,14 @@ class HeatmapDataset(Dataset):
 
     def __getitem__(self, idx):
         img = cv2.imread(self.image_paths[idx])
-        img = cv2.resize(img, (IMG_SIZE, IMG_SIZE))
+        heatmap = np.load(self.heatmap_paths[idx])  # shape: [K, H, W]
+
+        # 自动获取 heatmap 尺寸
+        h, w = heatmap.shape[1], heatmap.shape[2]
+        img = cv2.resize(img, (w, h))  # 注意: OpenCV 的顺序是 (width, height)
+
         img = img.astype('float32') / 255.0
         img = img.transpose(2, 0, 1)  # HWC -> CHW
 
-        heatmap = np.load(self.heatmap_paths[idx])  # shape: [K, H, W]
-
         return torch.tensor(img), torch.tensor(heatmap)
+
