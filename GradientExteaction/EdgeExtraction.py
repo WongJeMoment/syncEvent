@@ -3,63 +3,36 @@ import numpy as np
 import matplotlib.pyplot as plt
 import os
 
+# 你的图像路径
+img_path = "/home/wangzhe/ICRA2025/MY/data/part2_train_frame/1.jpg"
 
-def make_odd(k):
-    """确保高斯核尺寸为奇数"""
-    return k if k % 2 == 1 else k + 1
+# 模型文件路径（你需要提前下载 model.yml.gz 到这个位置）
+model_path = "/home/wangzhe/ICRA2025/MY/GradientExteaction/model.yml.gz"
 
+# 检查模型文件是否存在
+if not os.path.exists(model_path):
+    raise FileNotFoundError(f"模型文件未找到：{model_path}")
 
-def gradient_extraction(I, B=3):
-    """
-    实现梯度提取（Difference-of-Gaussians 方法）
+# 加载 Structured Edge 检测器
+edge_detector = cv2.ximgproc.createStructuredEdgeDetection(model_path)
 
-    参数：
-        I: 输入图像 (BGR or 灰度)
-        B: 高斯模糊基准核大小（推荐为3或5）
+# 读取图像并转为 RGB（StructuredEdgeDetection 要求输入为 RGB）
+img_bgr = cv2.imread(img_path)
+if img_bgr is None:
+    raise FileNotFoundError(f"图像未找到：{img_path}")
+img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
 
-    返回：
-        E: 最终 DoG 风格梯度图
-    """
-    # 转灰度图
-    gray = cv2.cvtColor(I, cv2.COLOR_BGR2GRAY) if len(I.shape) == 3 else I
+# 执行边缘检测（注意输入需要归一化到 0~1）
+edges = edge_detector.detectEdges(np.float32(img_rgb) / 255.0)
 
-    # Sobel 梯度提取
-    grad_x = cv2.Sobel(gray, cv2.CV_64F, 1, 0, ksize=3)
-    grad_y = cv2.Sobel(gray, cv2.CV_64F, 0, 1, ksize=3)
-    grad_mag = np.sqrt(grad_x**2 + grad_y**2)
+# 显示边缘图
+plt.imshow(edges, cmap='gray')
+plt.title('Structured Edge Detection')
+plt.axis('off')
+plt.show()
 
-    # 高斯模糊处理
-    ksize1 = make_odd(B)
-    ksize2 = make_odd(2 * B)
-    blur1 = cv2.GaussianBlur(grad_mag, (ksize1, ksize1), 0)
-    blur2 = cv2.GaussianBlur(grad_mag, (ksize2, ksize2), 0)
-
-    # DoG
-    E = blur1 - blur2
-
-    return E
-
-
-if __name__ == "__main__":
-    # 读取图像路径
-    img_path = '/home/wangzhe/ICRA2025/MY/data/part2_train_frame/1.jpg'
-    save_path = '/home/wangzhe/ICRA2025/MY/data/output_dog.jpg'
-
-    # 加载图像
-    img = cv2.imread(img_path)
-    if img is None:
-        raise FileNotFoundError(f"图像未找到：{img_path}")
-
-    # 提取梯度
-    E = gradient_extraction(img, B=5)
-
-    # 显示图像
-    plt.imshow(E, cmap='gray')
-    plt.title('Extracted Gradient (DoG)')
-    plt.axis('off')
-    plt.show()
-
-    # 保存结果（归一化后保存）
-    E_norm = cv2.normalize(E, None, 0, 255, cv2.NORM_MINMAX)
-    cv2.imwrite(save_path, E_norm.astype(np.uint8))
-    print(f"结果保存至：{save_path}")
+# 保存结果
+save_path = "/home/wangzhe/ICRA2025/MY/data/edge_results/structured_edge.png"
+os.makedirs(os.path.dirname(save_path), exist_ok=True)
+cv2.imwrite(save_path, (edges * 255).astype(np.uint8))
+print(f"边缘图像已保存至：{save_path}")
