@@ -1,8 +1,8 @@
 # config.py
 IMG_SIZE = 256
-SIGMA = 5
-BATCH_SIZE = 16
-EPOCHS = 200
+SIGMA = 3
+BATCH_SIZE = 32
+EPOCHS = 500
 LR = 1e-3
 
 TRAIN_IMAGE_DIR = "/home/wangzhe/ICRA2025/MY/data/part2_train_frame"

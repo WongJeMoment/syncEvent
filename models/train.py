@@ -10,6 +10,7 @@ import numpy as np
 
 
 def custom_collate_fn(batch):
+    # 会将 batch 拆成两个 tuple
     imgs, heatmaps = zip(*batch)
     return list(imgs), list(heatmaps)
 
@@ -22,6 +23,7 @@ def train():
 
     model = HeatmapUNet(num_keypoints=8).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=LR)
+
 
     os.makedirs("checkpoints", exist_ok=True)
     best_dist = float('inf')
