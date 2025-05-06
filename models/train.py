@@ -11,36 +11,34 @@ from dataset import HeatmapDataset
 from model import HeatmapUNet
 
 
-def scan_max_keypoints(label_dir):
+def scan_all_keypoints(label_dir):
+    """
+    扫描所有 .npy 标签文件，返回最大关键点数量
+    """
     npy_files = glob.glob(os.path.join(label_dir, "*.npy"))
     if not npy_files:
         raise ValueError("No .npy files found in label directory.")
     return max(np.load(f, mmap_mode="r").shape[0] for f in npy_files)
 
 
-def match_channels(pred, k):
-    # pred shape: (1, C_pred, H, W)
-    c_pred = pred.size(1)
-    if c_pred == k:
-        return pred
-    elif c_pred > k:
-        return pred[:, :k]
-    else:
-        pad = torch.zeros((1, k - c_pred, *pred.shape[2:]),
-                          device=pred.device, dtype=pred.dtype)
-        return torch.cat([pred, pad], dim=1)
-
-
 def extract_peak_coords(hm_tensor):
-    hm_np = hm_tensor.squeeze(0).detach().cpu().numpy()
-    return [tuple(np.unravel_index(np.argmax(hm), hm.shape)[::-1]) for hm in hm_np]
+    hm_np = hm_tensor.detach().cpu().numpy()
+    coords = []
+    for hm in hm_np:
+        coords.append([tuple(np.unravel_index(np.argmax(h, axis=None), h.shape)[::-1]) for h in hm])
+    return coords
 
 
 def accuracy_from_heatmaps(pred, gt):
     pred_coords = extract_peak_coords(pred)
     gt_coords = extract_peak_coords(gt)
-    dist = sum(np.linalg.norm(np.subtract(p, g)) for p, g in zip(pred_coords, gt_coords))
-    return len(gt_coords), dist
+    dist = 0
+    count = 0
+    for pc, gc in zip(pred_coords, gt_coords):
+        for p, g in zip(pc, gc):
+            dist += np.linalg.norm(np.subtract(p, g))
+            count += 1
+    return count, dist
 
 
 def visualize(img, gt_heatmap, pred_heatmap):
@@ -70,9 +68,10 @@ def train():
     loader = DataLoader(dataset, batch_size=BATCH_SIZE,
                         shuffle=True, collate_fn=custom_collate_fn)
 
-    max_keypoints = scan_max_keypoints(TRAIN_LABEL_DIR)
+    max_keypoints = scan_all_keypoints(TRAIN_LABEL_DIR)
     print(f"✅ 模型最大输出关键点数设置为: {max_keypoints}")
     model = HeatmapUNet(num_keypoints=max_keypoints).to(device)
+    model.out_channels = max_keypoints  # ✅ 添加属性用于检查输出通道数
     optimizer = torch.optim.Adam(model.parameters(), lr=LR)
 
     best_dist = float("inf")
@@ -82,34 +81,45 @@ def train():
     for epoch in range(EPOCHS):
         model.train()
         total_loss, total_dist, total_kpts = 0, 0, 0
-        epoch_max_kps = 0
 
         for imgs, heatmaps in loader:
-            for img, heatmap in zip(imgs, heatmaps):
-                img = img.to(device).unsqueeze(0)
-                heatmap = heatmap.to(device).unsqueeze(0)
-                k = heatmap.shape[1]  # 当前图实际关键点数
-                epoch_max_kps = max(epoch_max_kps, k)
+            imgs = torch.stack(imgs).to(device)         # (B, 3, H, W)
+            heatmaps = torch.stack(heatmaps).to(device) # (B, K, H, W)
 
-                pred = model(img)
-                pred = match_channels(pred, k)
-                pred = F.interpolate(pred, size=heatmap.shape[-2:], mode="bilinear", align_corners=False)
+            # ✅ 确保 heatmaps 通道数与模型输出一致：裁剪或补零
+            if heatmaps.shape[1] > model.out_channels:
+                heatmaps = heatmaps[:, :model.out_channels]
+            elif heatmaps.shape[1] < model.out_channels:
+                pad = model.out_channels - heatmaps.shape[1]
+                padding = torch.zeros((heatmaps.shape[0], pad, *heatmaps.shape[2:]),
+                                      device=heatmaps.device, dtype=heatmaps.dtype)
+                heatmaps = torch.cat([heatmaps, padding], dim=1)
 
-                loss = F.mse_loss(pred, heatmap)
-                optimizer.zero_grad()
-                loss.backward()
-                optimizer.step()
+            k = heatmaps.shape[1]  # == model.out_channels
 
-                total_loss += loss.item()
-                acc, dist = accuracy_from_heatmaps(pred, heatmap)
-                total_kpts += acc
-                total_dist += dist
+            preds = model(imgs)
+            preds = F.interpolate(preds, size=heatmaps.shape[-2:], mode="bilinear", align_corners=False)
+
+            # ✅ 用 mask 区分有效关键点通道
+            mask = torch.zeros_like(preds)
+            mask[:, :k] = 1.0
+            loss = F.mse_loss(preds * mask, heatmaps * mask)
+
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+
+            total_loss += loss.item()
+
+            # ✅ 准确度评估仅对有效通道
+            acc, dist = accuracy_from_heatmaps(preds[:, :k], heatmaps[:, :k])
+            total_kpts += acc
+            total_dist += dist
 
         avg_dist = total_dist / (total_kpts + 1e-6)
-        print(f"▶ Detected max keypoints = {epoch_max_kps}")
         print(f"[Epoch {epoch+1}] Loss: {total_loss:.4f} | Avg Distance: {avg_dist:.2f}")
 
-        visualize(img[0].cpu(), heatmap[0].cpu(), pred[0].cpu())
+        visualize(imgs[0].cpu(), heatmaps[0].cpu(), preds[0].cpu())
 
         if avg_dist < best_dist:
             best_dist = avg_dist

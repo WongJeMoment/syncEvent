@@ -21,6 +21,7 @@ class DoubleConv(nn.Module):
 class HeatmapUNet(nn.Module):
     def __init__(self, num_keypoints):
         super().__init__()
+        self.out_channels = num_keypoints  # ✅ 添加这行
 
         # 编码器
         self.enc1 = DoubleConv(3, 64)

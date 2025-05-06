@@ -1,7 +1,7 @@
 # config.py
 IMG_SIZE = 256
 SIGMA = 3
-BATCH_SIZE = 32
+BATCH_SIZE = 1
 EPOCHS = 500
 LR = 1e-3
 
