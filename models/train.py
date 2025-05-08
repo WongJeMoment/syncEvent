@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 
 from config import *
 from dataset import HeatmapDataset
-from model import HeatmapUNet
+from model import HybridHeatmapUNet
 
 
 def scan_all_keypoints(label_dir):
@@ -70,7 +70,7 @@ def train():
 
     max_keypoints = scan_all_keypoints(TRAIN_LABEL_DIR)
     print(f"✅ 模型最大输出关键点数设置为: {max_keypoints}")
-    model = HeatmapUNet(num_keypoints=max_keypoints).to(device)
+    model = HybridHeatmapUNet(num_keypoints=max_keypoints).to(device)
     model.out_channels = max_keypoints  # ✅ 添加属性用于检查输出通道数
     optimizer = torch.optim.Adam(model.parameters(), lr=LR)
 
