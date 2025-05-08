@@ -4,6 +4,7 @@ import torch.nn as nn
 import timm                 # ✔️ 包含 MobileViTBlock
 from einops import rearrange
 from timm.models.mobilevit import MobileVitBlock
+import torch.nn.functional as F
 
 # ---------------- DSConv + ECA ---------------- #
 class ECA(nn.Module):
@@ -44,16 +45,30 @@ def MobileViT(in_chs, d_model=192, patch_size=2):
         stride=1
     )
 
+class TinyUNet(nn.Module):
+    def __init__(self, in_ch=1, base_ch=16):
+        super().__init__()
+        self.enc1 = nn.Sequential(nn.Conv2d(in_ch, base_ch, 3, padding=1), nn.ReLU())
+        self.pool = nn.MaxPool2d(2)
+        self.enc2 = nn.Sequential(nn.Conv2d(base_ch, base_ch*2, 3, padding=1), nn.ReLU())
+        self.up   = nn.ConvTranspose2d(base_ch*2, base_ch, 2, stride=2)
+        self.dec  = nn.Sequential(nn.Conv2d(base_ch*2, base_ch, 3, padding=1), nn.ReLU())
+        self.out  = nn.Conv2d(base_ch, 1, 1)
 
+    def forward(self, x):
+        e1 = self.enc1(x)
+        e2 = self.enc2(self.pool(e1))
+        d  = self.dec(torch.cat([self.up(e2), e1], 1))
+        return self.out(d)
 
 # -------------- Hybrid UNet -------------------- #
 class HybridHeatmapUNet(nn.Module):
     def __init__(self, num_keypoints, width_mult=0.75):
         super().__init__()
-        ch = [int(c*width_mult) for c in (32, 64, 96, 192, 256)]  # c1..c5
+        ch = [int(c*width_mult) for c in (32, 64, 96, 192, 256)]
         c1, c2, c3, c4, c5 = ch
+        self.num_keypoints = num_keypoints
 
-        # 编码器
         self.enc1 = DSConvBlock(3,  c1)
         self.pool1= nn.MaxPool2d(2)
         self.enc2 = DSConvBlock(c1, c2)
@@ -63,11 +78,9 @@ class HybridHeatmapUNet(nn.Module):
         self.enc4 = DSConvBlock(c3, c4)
         self.pool4= nn.MaxPool2d(2)
 
-        # Hybrid Bottleneck: 2×MobileViT
         self.mv1 = MobileViT(in_chs=c4, d_model=c4, patch_size=2)
         self.mv2 = MobileViT(in_chs=c4, d_model=c4, patch_size=2)
 
-        # 解码器（仍用 DSConv）
         self.up4  = nn.ConvTranspose2d(c4, c4, 2, stride=2)
         self.dec4 = DSConvBlock(c4 + c4, c4)
         self.up3  = nn.ConvTranspose2d(c4, c3, 2, 2)
@@ -77,25 +90,52 @@ class HybridHeatmapUNet(nn.Module):
         self.up1  = nn.ConvTranspose2d(c2, c1, 2, 2)
         self.dec1 = DSConvBlock(c1 + c1, c1)
 
-        # 输出层
         self.final = nn.Conv2d(c1, num_keypoints, 1)
         self.out_channels = num_keypoints
 
+        # 添加 refinement 模块
+        self.refine_net = TinyUNet(in_ch=1)
+
     def forward(self, x):
-        # --- 编码 ---
+        B, _, H, W = x.shape
+
+        # 编码-解码
         e1 = self.enc1(x)
         e2 = self.enc2(self.pool1(e1))
         e3 = self.enc3(self.pool2(e2))
         e4 = self.enc4(self.pool3(e3))
-
-        # --- Bottleneck / MobileViT ---
-        b  = self.pool4(e4)                 # ↓16
-        b  = self.mv2(self.mv1(b))          # global context
-
-        # --- 解码 ---
+        b  = self.pool4(e4)
+        b  = self.mv2(self.mv1(b))
         d4 = self.dec4(torch.cat([self.up4(b), e4], 1))
         d3 = self.dec3(torch.cat([self.up3(d4), e3], 1))
         d2 = self.dec2(torch.cat([self.up2(d3), e2], 1))
         d1 = self.dec1(torch.cat([self.up1(d2), e1], 1))
+        coarse_hm = self.final(d1)
 
-        return self.final(d1)               # [B, K, H, W]
+        # ---------- Adaptive Patch Refinement ----------
+        refined_hm = coarse_hm.clone()
+        patch_size = 32
+        pad = patch_size // 2
+        threshold = 0.3
+
+        for b in range(B):
+            for k in range(self.num_keypoints):
+                heat = coarse_hm[b, k]
+                maxval = heat.max().item()
+                if maxval < threshold:
+                    continue
+                y, x = torch.nonzero(heat == maxval, as_tuple=True)
+                if len(x) == 0: continue
+                cy, cx = y[0].item(), x[0].item()
+                top = max(cy - pad, 0)
+                left = max(cx - pad, 0)
+                bottom = min(cy + pad, H)
+                right = min(cx + pad, W)
+
+                crop = heat[top:bottom, left:right].unsqueeze(0).unsqueeze(0)  # [1,1,h,w]
+                crop_resized = F.interpolate(crop, size=(32, 32), mode='bilinear', align_corners=False)
+                refined = self.refine_net(crop_resized)
+                refined_up = F.interpolate(refined, size=(bottom - top, right - left), mode='bilinear', align_corners=False)
+                refined_hm[b, k, top:bottom, left:right] = refined_up.squeeze(0).squeeze(0)
+
+        return refined_hm
