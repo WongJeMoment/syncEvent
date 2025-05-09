@@ -12,7 +12,7 @@ def load_keypoints_from_json(json_path):
     print(f"📦 Keypoints loaded from {json_path}")
     return keypoints, ids
 
-def visualize_stl_and_keypoints(file_path, keypoints, ids):
+def visualize_stl_and_keypoints(file_path, keypoints, ids, unit="mm"):
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
 
@@ -25,12 +25,18 @@ def visualize_stl_and_keypoints(file_path, keypoints, ids):
     for idx, (x, y, z) in zip(ids, keypoints):
         ax.text(x, y, z, f'{idx}', color='blue')
 
-    ax.set_title("STL Model with JSON Keypoints (with IDs)")
+    # ✅ 设置坐标轴标签加单位
+    ax.set_xlabel(f'X ({unit})')
+    ax.set_ylabel(f'Y ({unit})')
+    ax.set_zlabel(f'Z ({unit})')
+
+    # ✅ 标题中也加上单位
+    ax.set_title(f"STL Model with JSON Keypoints (Unit: {unit})")
     plt.show()
 
 if __name__ == "__main__":
-    stl_path = "/STL/cube/cube.STL"  # <- 替换成你的 STL 文件路径
-    json_path = "/STL/cube/cube.json"  # <- 替换成你的 JSON 路径
+    stl_path = "/home/wangzhe/ICRA2025/MY/STL/PART2/Part2.STL"  # <- 替换成你的 STL 文件路径
+    json_path = "/home/wangzhe/ICRA2025/MY/STL/PART2/Part2.json"  # <- 替换成你的 JSON 路径
 
     keypoints, ids = load_keypoints_from_json(json_path)
     visualize_stl_and_keypoints(stl_path, keypoints, ids)
