@@ -11,11 +11,18 @@ def infer_num_keypoints(heatmap_dir):
     heatmap = np.load(os.path.join(heatmap_dir, sample_file))
     return heatmap.shape[0]  # channel 数 == 关键点数量
 
-def preprocess_image(img):
-    img = cv2.resize(img, (IMG_SIZE, IMG_SIZE))
-    img = img / 255.0
-    img = img.transpose(2, 0, 1)  # HWC -> CHW
-    return img.astype(np.float32)
+def preprocess_image(img, img_size=IMG_SIZE):
+    h_orig, w_orig = img.shape[:2]
+    img_resized = cv2.resize(img, (img_size, img_size))
+    img_normalized = img_resized / 255.0
+    img_chw = img_normalized.transpose(2, 0, 1).astype(np.float32)
+
+    scale_x = w_orig / img_size
+    scale_y = h_orig / img_size
+
+    return img_chw, (scale_x, scale_y), (h_orig, w_orig)
+
+
 
 class HeatmapDataset(Dataset):
     def __init__(self, image_dir, heatmap_dir):
