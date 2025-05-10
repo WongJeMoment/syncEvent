@@ -15,9 +15,14 @@ def select_epnp_four_points(keypoints):
 
 def solve_pnp_epnp(object_points, image_points, camera_matrix):
     """
-    用EPnP算法求解rvec, tvec
+    用EPnP算法求解 rvec, tvec
     """
-    dist_coeffs = np.zeros((5, 1))  # 默认无畸变
+    dist_coeffs = np.zeros((5, 1), dtype=np.float32)  # 默认无畸变
+
+    # ✅ 正确格式：float32 + (N,1,3) 和 (N,1,2)
+    object_points = np.array(object_points, dtype=np.float32).reshape(-1, 1, 3)
+    image_points = np.array(image_points, dtype=np.float32).reshape(-1, 1, 2)
+    camera_matrix = np.array(camera_matrix, dtype=np.float32)
 
     success, rvec, tvec = cv2.solvePnP(
         object_points,
@@ -31,3 +36,4 @@ def solve_pnp_epnp(object_points, image_points, camera_matrix):
         raise ValueError("❌ EPnP求解失败，请检查输入点！")
 
     return rvec, tvec
+

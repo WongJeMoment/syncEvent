@@ -13,6 +13,7 @@ from camera_config import get_camera_matrix
 from visualization import draw_cube_with_keypoints
 from stl import mesh
 from keypoint_map import IMAGE_TO_STL_ID, EPnP_INDEXES
+import trimesh
 
 
 def draw_projected_stl_on_image(img, stl_path, rvec, tvec, camera_matrix):
@@ -48,7 +49,7 @@ def main():
     model = HybridHeatmapUNet(num_keypoints=15).to(device)
     best_model_path = "/home/wangzhe/ICRA2025/MY/models/checkpoints/best_model.pt"
     assert os.path.exists(best_model_path), "没有找到最佳模型，请先训练。"
-    model.load_state_dict(torch.load(best_model_path, map_location=device))
+    model.load_state_dict(torch.load(best_model_path, map_location=device, weights_only=True))
     model.eval()
 
     # 读取图像
@@ -93,6 +94,9 @@ def main():
         camera_matrix = get_camera_matrix(orig_w, orig_h)
 
         # PnP求解
+        print("[DEBUG] selected_object_points.shape =", selected_object_points.shape)
+        print("[DEBUG] image_points.shape =", image_points.shape)
+
         rvec, tvec = solve_pnp_epnp(selected_object_points, image_points, camera_matrix)
 
         # 投影3D点用于画图
