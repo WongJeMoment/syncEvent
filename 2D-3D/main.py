@@ -4,10 +4,9 @@ import torch
 import numpy as np
 import json
 
-from models.model import HeatmapUNet
+from models.model import HybridHeatmapUNet
 from models.config import *
-from models.dataset import preprocess_image
-from models.val_video import extract_peak_coords
+from models.val import extract_peak_coords  # ✅ 关键点提取函数
 
 from epnp_solver import select_epnp_four_points, solve_pnp_epnp
 from camera_config import get_camera_matrix
@@ -24,14 +23,12 @@ def draw_projected_stl_on_image(img, stl_path, rvec, tvec, camera_matrix):
     projected_img = img.copy()
 
     for triangle in your_mesh.vectors:
-        # Project each vertex
         imgpts, _ = cv2.projectPoints(triangle, rvec, tvec, camera_matrix, None)
         pts = np.int32(imgpts).reshape(-1, 2)
-
-        # Draw triangle
         cv2.polylines(projected_img, [pts], isClosed=True, color=(0, 255, 0), thickness=2)
 
     return projected_img
+
 
 def load_model_points_from_json(json_path):
     """
@@ -43,46 +40,50 @@ def load_model_points_from_json(json_path):
     points = np.array([[d["x"], d["y"], d["z"]] for d in data], dtype=np.float32)
     return points, ids
 
+
 def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # 加载模型
-    model = HeatmapUNet(num_keypoints=8).to(device)
+    model = HybridHeatmapUNet(num_keypoints=15).to(device)
     best_model_path = "/home/wangzhe/ICRA2025/MY/models/checkpoints/best_model.pt"
     assert os.path.exists(best_model_path), "没有找到最佳模型，请先训练。"
     model.load_state_dict(torch.load(best_model_path, map_location=device))
     model.eval()
 
     # 读取图像
-    img_path = "/home/wangzhe/ICRA2025/MY/data/frame/1.jpg"
+    img_path = "/home/wangzhe/ICRA2025/MY/data/part2_val_frame/2.jpg"
     assert os.path.exists(img_path), "图片文件不存在！"
 
     frame = cv2.imread(img_path)
     orig_h, orig_w = frame.shape[:2]
 
-    img_input = preprocess_image(frame)
-    img_tensor = torch.from_numpy(img_input).unsqueeze(0).to(device)
+    # ✅ 图像预处理（与 val.py 保持一致）
+    img_tensor = torch.from_numpy(frame).permute(2, 0, 1).float() / 255.0
+    img_tensor = img_tensor.unsqueeze(0).to(device)
 
+    scale_x = 1.0
+    scale_y = 1.0
+
+    # ✅ 模型预测与关键点提取
     with torch.no_grad():
         pred_heatmap = model(img_tensor)
+    keypoints = extract_peak_coords(pred_heatmap, scale_x=scale_x, scale_y=scale_y)
 
-    keypoints = extract_peak_coords(pred_heatmap, orig_size=(orig_h, orig_w))
-
-    if len(keypoints) != 8:
-        print(f"⚠️ 检测到的角点数量不足8个，目前是{len(keypoints)}个，PnP可能失败！")
+    if len(keypoints) < 4:
+        print(f"❌ 检测到关键点数量过少，当前是 {len(keypoints)}，PnP 失败")
         return
 
     # 加载模型 3D 角点（含 ID）
-    model_json_path = "/STL/cube/cube.json"
+    model_json_path = "/home/wangzhe/ICRA2025/MY/STL/PART2/Part2.json"
     object_points, object_ids = load_model_points_from_json(model_json_path)
 
     # 选择用于EPnP的图像关键点（4个）
     image_points = np.array([keypoints[i] for i in EPnP_INDEXES], dtype=np.float32)
-
     selected_object_ids = [IMAGE_TO_STL_ID[i] for i in EPnP_INDEXES]
 
     try:
-        # 根据 ID 映射出4个对应的 3D 点
+        # 对应 3D 点
         selected_object_points = np.array(
             [object_points[object_ids.index(i)] for i in selected_object_ids],
             dtype=np.float32
@@ -97,17 +98,13 @@ def main():
         # 投影3D点用于画图
         imgpts, _ = cv2.projectPoints(object_points, rvec, tvec, camera_matrix, None)
 
-        # 可视化结果
-        # 画出 cube 边框和关键点
+        # 可视化 cube 和 STL 模型
         frame_with_cube = draw_cube_with_keypoints(frame.copy(), imgpts, keypoints)
-
-        # 画出姿态变换后的 STL 模型
-        stl_path = "/STL/cube/cube.STL"  # 替换为你的 STL 路径
+        stl_path = "/home/wangzhe/ICRA2025/MY/STL/PART2/Part2.STL"
         frame_with_stl = draw_projected_stl_on_image(frame_with_cube, stl_path, rvec, tvec, camera_matrix)
 
-        # 显示最终图像
+        # 显示图像
         cv2.imshow("Pose Visualization with STL", frame_with_stl)
-
         cv2.waitKey(0)
         cv2.destroyAllWindows()
 
@@ -117,6 +114,7 @@ def main():
 
     except ValueError as e:
         print("❌ PnP失败：", str(e))
+
 
 if __name__ == "__main__":
     main()
