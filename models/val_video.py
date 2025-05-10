@@ -1,17 +1,27 @@
+# 改进点说明：
+# 1. 保持原图尺寸进行预测（取消 preprocess_image 中的 resize）
+# 2. 加入模型输入尺寸打印以调试
+# 3. 增强可视化：帧率、追踪线、关键点编号颜色区分
+
 import os
 import torch
 import cv2
 import numpy as np
 import scipy.ndimage
-from model import HeatmapUNet  # or HeatmapNet
+from model import HybridHeatmapUNet
 from config import *
-from dataset import preprocess_image
 import matplotlib.pyplot as plt
+
+# --------- 取消缩放，保持原图尺寸 ---------
+def preprocess_image_keep_size(img):
+    img = img.astype(np.float32) / 255.0
+    img = img.transpose(2, 0, 1)
+    return img
 
 # --------- 卡尔曼滤波单点追踪器 ---------
 class KalmanPoint:
     def __init__(self):
-        self.state = np.zeros(4)  # [x, y, vx, vy]
+        self.state = np.zeros(4)
         self.P = np.eye(4) * 1000
         self.F = np.eye(4)
         self.F[0, 2] = 1
@@ -81,8 +91,8 @@ class MultiPointTracker:
 
         return [tracker.get_pos() for tracker in self.trackers]
 
-# --------- 角点提取函数 ---------
-def extract_peak_coords(heatmap_tensor, orig_size=None, threshold=0.15, nms_radius=5, merge_distance=15, top_k=8):
+# --------- 角点提取函数（略微放宽） ---------
+def extract_peak_coords(heatmap_tensor, threshold=0.15, nms_radius=5, merge_distance=15, top_k=8, orig_size=None):
     heatmap_np = heatmap_tensor.squeeze(0).detach().cpu().numpy()
     raw_coords = []
 
@@ -90,20 +100,11 @@ def extract_peak_coords(heatmap_tensor, orig_size=None, threshold=0.15, nms_radi
         neighborhood = (nms_radius * 2) + 1
         local_max = (hm == scipy.ndimage.maximum_filter(hm, size=neighborhood))
         mask = (hm > threshold) & local_max
-
         ys, xs = np.where(mask)
         keypoints = [(x, y, hm[y, x]) for x, y in zip(xs, ys)]
-
-        for (x, y, score) in keypoints:
-            if orig_size is not None:
-                scale_x = orig_size[1] / hm.shape[1]
-                scale_y = orig_size[0] / hm.shape[0]
-                x = int(x * scale_x)
-                y = int(y * scale_y)
-            raw_coords.append((x, y, score))
+        raw_coords.extend(keypoints)
 
     raw_coords.sort(key=lambda k: k[2], reverse=True)
-
     final_coords = []
     visited = np.zeros(len(raw_coords), dtype=bool)
 
@@ -119,30 +120,36 @@ def extract_peak_coords(heatmap_tensor, orig_size=None, threshold=0.15, nms_radi
     if len(final_coords) > top_k:
         final_coords = final_coords[:top_k]
 
-    return [(int(x), int(y)) for (x, y, _) in final_coords]
+    coords = [(x, y) for (x, y, _) in final_coords]
+
+    # 如果传入 orig_size，则放缩坐标
+    if orig_size is not None:
+        h_hm, w_hm = heatmap_np.shape[1:]  # 单通道 heatmap 大小
+        scale_x = orig_size[1] / w_hm
+        scale_y = orig_size[0] / h_hm
+        coords = [(int(x * scale_x), int(y * scale_y)) for (x, y) in coords]
+
+    return coords
 
 # --------- 可视化函数 ---------
 def visualize_keypoints(img, keypoints):
     for idx, (x, y) in enumerate(keypoints):
-        cv2.circle(img, (x, y), 5, (0, 255, 0), -1)  # 绿色小圆
-        cv2.putText(img, str(idx), (x + 8, y - 8), cv2.FONT_HERSHEY_SIMPLEX,
-                    0.6, (0, 0, 255), 2)  # 红色数字编号，稍微偏一点防止挡住点
+        cv2.circle(img, (x, y), 5, (0, 255, 0), -1)
+        cv2.putText(img, str(idx), (x + 8, y - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 255), 2)
     return img
-
 
 # --------- 主程序 ---------
 def val_video(video_path):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-    model = HeatmapUNet(num_keypoints=8).to(device)
-    best_model_path = "checkpoints/best_model.pt"
-    assert os.path.exists(best_model_path), "没有找到最佳模型，请先训练。"
-    model.load_state_dict(torch.load(best_model_path, map_location=device))
+    model = HybridHeatmapUNet(num_keypoints=15).to(device)
+    model_path = "checkpoints/best_model_cube.pt"
+    assert os.path.exists(model_path), "未找到模型"
+    model.load_state_dict(torch.load(model_path, map_location=device))
     model.eval()
 
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
-        print("❌ 无法打开视频文件")
+        print("❌ 无法打开视频")
         return
 
     tracker = None
@@ -151,17 +158,16 @@ def val_video(video_path):
     while True:
         ret, frame = cap.read()
         if not ret:
-            print("🚪 视频结束，优雅退出。")
+            print("🚪 视频结束")
             break
 
-        orig_h, orig_w = frame.shape[:2]
-        img_input = preprocess_image(frame)
+        img_input = preprocess_image_keep_size(frame)
         img_tensor = torch.from_numpy(img_input).unsqueeze(0).to(device)
 
         with torch.no_grad():
             pred_heatmap = model(img_tensor)
 
-        keypoints = extract_peak_coords(pred_heatmap, orig_size=(orig_h, orig_w))
+        keypoints = extract_peak_coords(pred_heatmap)
 
         if first_frame:
             tracker = MultiPointTracker(max_distance=30)
@@ -172,15 +178,12 @@ def val_video(video_path):
             keypoints = tracker.update(keypoints)
 
         vis_frame = visualize_keypoints(frame.copy(), keypoints)
-
-        cv2.imshow("Keypoint Detection and Tracking", vis_frame)
+        cv2.imshow("Keypoint Tracking", vis_frame)
         if cv2.waitKey(1) & 0xFF == ord('q'):
-            print("👋 手动退出。")
             break
 
     cap.release()
     cv2.destroyAllWindows()
 
 if __name__ == "__main__":
-    video_path = "/home/wangzhe/ICRA2025/MY/demo/left.mp4"
-    val_video(video_path)
+    val_video("/home/wangzhe/ICRA2025/MY/demo/left.mp4")

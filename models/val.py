@@ -15,13 +15,15 @@ def load_image(img_path):
     return img.unsqueeze(0)  # B, C, H, W
 
 
-def extract_peak_coords(heatmap_tensor):
+def extract_peak_coords(heatmap_tensor, scale_x=1.0, scale_y=1.0):
     heatmap_np = heatmap_tensor.squeeze(0).detach().cpu().numpy()
     coords = []
-    for hm in heatmap_np:
+
+    for i, hm in enumerate(heatmap_np):
         y, x = np.unravel_index(np.argmax(hm), hm.shape)
-        coords.append((x, y))
+        coords.append((x * scale_x, y * scale_y))  # ⬅️ 缩放还原坐标
     return coords
+
 
 
 def visualize_prediction(img_tensor, pred_heatmap):
