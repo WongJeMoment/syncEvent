@@ -6,6 +6,42 @@ from einops import rearrange
 from timm.models.mobilevit import MobileVitBlock
 import torch.nn.functional as F
 
+# Loss Function
+def extract_coords_from_heatmap(hm):
+    """
+    hm: (B, K, H, W)
+    return: (B, K, 2) 坐标 (x, y)
+    """
+    B, K, H, W = hm.shape
+    hm = hm.view(B, K, -1)
+    coords = hm.argmax(dim=-1)
+    x = coords % W
+    y = coords // W
+    return torch.stack([x, y], dim=-1).float()
+
+def structure_aware_heatmap_loss(pred, target, mask=None, λ1=1.0, λ2=1.0, λ3=1.0):
+    """
+    综合结构感知损失，包括 heatmap 差异、关键点位置对齐、结构保持
+    pred / target: [B, K, H, W]
+    mask: optional [B, K, H, W]，用于屏蔽无效通道
+    """
+    if mask is not None:
+        pred = pred * mask
+        target = target * mask
+
+    L_heatmap = F.mse_loss(pred, target)
+
+    pred_coords = extract_coords_from_heatmap(pred)
+    gt_coords   = extract_coords_from_heatmap(target)
+    L_center    = F.l1_loss(pred_coords, gt_coords)
+
+    pred_struct = torch.cdist(pred_coords, pred_coords, p=2)
+    gt_struct   = torch.cdist(gt_coords, gt_coords, p=2)
+    L_structure = F.l1_loss(pred_struct, gt_struct)
+
+    return λ1 * L_heatmap + λ2 * L_center + λ3 * L_structure
+
+
 # ---------------- DSConv + ECA ---------------- #
 class ECA(nn.Module):
     def __init__(self, c, gamma=2, b=1):

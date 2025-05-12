@@ -7,7 +7,7 @@ from torch.utils.data import DataLoader
 import matplotlib.pyplot as plt
 from config import *
 from dataset import HeatmapDataset
-from model import HybridHeatmapUNet
+from model import HybridHeatmapUNet, structure_aware_heatmap_loss
 
 # 统计最大关键点数
 def scan_all_keypoints(label_dir):
@@ -114,7 +114,7 @@ def train():
             # ✅ 用 mask 区分有效关键点通道
             mask = torch.zeros_like(preds)
             mask[:, :k] = 1.0
-            loss = F.mse_loss(preds * mask, heatmaps * mask)
+            loss = structure_aware_heatmap_loss(preds, heatmaps, mask=mask, λ1=1.0, λ2=1.0, λ3=1.0)
 
             optimizer.zero_grad()
             loss.backward()
