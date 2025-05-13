@@ -1,11 +1,21 @@
-from stl import mesh
+import trimesh
+import pyrender
+import matplotlib.pyplot as plt
 import numpy as np
+# 加载 OBJ 或 STL
+mesh = trimesh.load('/home/wangzhe/ICRA2025/MY/STL/cube/cube1.obj')  # 支持 .obj/.stl
 
-def load_stl_contour_points(stl_path, sample_num=1000):
-    """
-    载入 STL 文件，并采样 M 个轮廓点
-    """
-    model = mesh.Mesh.from_file(stl_path)
-    all_points = model.vectors.reshape(-1, 3)
-    indices = np.random.choice(len(all_points), sample_num, replace=False)
-    return all_points[indices]
+# 设置摄像机
+scene = pyrender.Scene()
+scene.add(pyrender.Mesh.from_trimesh(mesh, smooth=False))
+camera = pyrender.PerspectiveCamera(yfov=np.pi / 3.0)
+scene.add(camera, pose=np.eye(4))  # 可自定义视角姿态
+
+# 渲染图像
+r = pyrender.OffscreenRenderer(640, 480)
+color, depth = r.render(scene)
+
+plt.imshow(color)
+plt.title("Rendered Projection")
+plt.axis('off')
+plt.show()
