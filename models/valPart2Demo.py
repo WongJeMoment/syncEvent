@@ -7,10 +7,12 @@ import scipy.ndimage
 from model import HybridHeatmapUNet
 from config import *
 
-# ---------- 预处理图像 ----------
+torch.backends.cudnn.benchmark = True
+
+# ---------- 图像预处理 ----------
 def preprocess_image(img):
     img = img.astype(np.float32) / 255.0
-    img = img.transpose(2, 0, 1)  # HWC -> CHW
+    img = img.transpose(2, 0, 1)
     return img
 
 def pad_to_multiple(img, divisor=32):
@@ -69,7 +71,7 @@ def visualize_keypoints(img, keypoints):
 def val_video(video_path):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = HybridHeatmapUNet(num_keypoints=15).to(device)
-    model_path = "checkpoints/best_model.pt"
+    model_path = "/home/wangzhe/ICRA2025/MY/models/checkpoints/best_model.pt"
     assert os.path.exists(model_path), "❌ 未找到模型"
     model.load_state_dict(torch.load(model_path, map_location=device))
     model.eval()
@@ -78,6 +80,14 @@ def val_video(video_path):
     if not cap.isOpened():
         print("❌ 无法打开视频")
         return
+
+    # ---------- 保存视频设置 ----------
+    fps_video = cap.get(cv2.CAP_PROP_FPS)
+    fps_out = fps_video / 2  # 放慢一倍
+    width_out, height_out = 1280, 720
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    save_path = "output_keypoints_slow.mp4"
+    video_writer = cv2.VideoWriter(save_path, fourcc, fps_out, (width_out, height_out))
 
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     prev_gray = None
@@ -92,12 +102,12 @@ def val_video(video_path):
             break
 
         t_start = time.time()
-
         frame_resized = cv2.resize(frame, (1280, 720))
         gray = cv2.cvtColor(frame_resized, cv2.COLOR_BGR2GRAY)
         frame_id += 1
 
-        if prev_pts is None:
+        if frame_id == 1:
+            # ✅ 第一帧使用模型检测
             padded_img, orig_hw = pad_to_multiple(frame_resized)
             img_input = preprocess_image(padded_img)
             img_tensor = torch.from_numpy(img_input).unsqueeze(0).to(device)
@@ -110,32 +120,39 @@ def val_video(video_path):
             prev_pts = np.array(keypoints, dtype=np.float32).reshape(-1, 1, 2)
             prev_gray = gray
         else:
+            # ✅ 后续帧使用光流跟踪
             next_pts, status, _ = cv2.calcOpticalFlowPyrLK(prev_gray, gray, prev_pts, None)
             prev_gray = gray.copy()
             prev_pts = next_pts
 
-        vis_frame = visualize_keypoints(frame_resized.copy(), prev_pts.squeeze())
+        # ✅ 可视化关键点
+        vis_frame = frame_resized.copy()
+        if prev_pts is not None and len(prev_pts) > 0:
+            vis_frame = visualize_keypoints(vis_frame, prev_pts.reshape(-1, 2))
 
-        # ---------- 显示帧率 ----------
+        # ✅ 显示帧率和帧编号
         fps = 1.0 / (time.time() - t_start + 1e-6)
         fps_history.append(fps)
         if len(fps_history) > 30:
             fps_history.pop(0)
         fps_avg = sum(fps_history) / len(fps_history)
 
-        cv2.putText(vis_frame, f"FPS: {fps_avg:.1f}", (20, 30),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
+        cv2.putText(vis_frame, f"FPS: {fps_avg:.1f}", (20, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
+        cv2.putText(vis_frame, f"Frame: {frame_id}/{total_frames}", (20, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 0), 2)
 
-        # ---------- 显示帧编号 ----------
-        cv2.putText(vis_frame, f"Frame: {frame_id}/{total_frames}", (20, 60),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 0), 2)
+        # ✅ 保存帧到视频
+        video_writer.write(vis_frame)
 
-        cv2.imshow("Keypoint Tracking (1280x720)", vis_frame)
-        if cv2.waitKey(1) & 0xFF == ord('q'):
+        # ✅ 显示窗口
+        cv2.imshow("Keypoint Tracking (Slow Save)", vis_frame)
+        if cv2.waitKey(31) & 0xFF == ord('q'):
             break
 
+    # ---------- 释放资源 ----------
     cap.release()
+    video_writer.release()
     cv2.destroyAllWindows()
+    print(f"🎥 视频已保存至：{save_path}")
 
 if __name__ == "__main__":
     val_video("/home/wangzhe/ICRA2025/MY/video/Part2Demo.mp4")
