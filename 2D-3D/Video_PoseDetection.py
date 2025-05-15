@@ -15,33 +15,21 @@ from camera_config import get_camera_matrix
 from keypoint_map import IMAGE_TO_STL_ID, EPnP_INDEXES
 
 
-# -------Render STL Model-------
 def render_projected_stl_with_normal_zbuffer(img, stl_path, rvec, tvec, camera_matrix):
-    """
-    带遮挡判断的法线着色渲染（按深度排序）
-    """
     your_mesh = mesh.Mesh.from_file(stl_path)
     rendered = img.copy()
-
     R, _ = cv2.Rodrigues(rvec)
     t = tvec.reshape(3)
-
     triangles = []
     for i, tri in enumerate(your_mesh.vectors):
-        # 三角形中心点转换到相机坐标系
         center = tri.mean(axis=0)
         cam_space = R @ center + t
-        depth = cam_space[2]  # 相机坐标系下 z 越小越近
+        depth = cam_space[2]
         triangles.append((depth, i, tri))
-
-    # 按 depth 从远到近排序
     triangles.sort(reverse=True)
-
     for _, i, triangle in triangles:
         imgpts, _ = cv2.projectPoints(triangle, rvec, tvec, camera_matrix, None)
         pts = np.int32(imgpts).reshape(-1, 2)
-
-        # 法线可视化色彩
         normal = your_mesh.normals[i]
         norm = np.linalg.norm(normal)
         if norm == 0:
@@ -53,39 +41,27 @@ def render_projected_stl_with_normal_zbuffer(img, stl_path, rvec, tvec, camera_m
             int((normal[2] * 0.5 + 0.5) * 255)
         )
         cv2.fillConvexPoly(rendered, pts, color)
-
     blended = cv2.addWeighted(img, 0.3, rendered, 0.7, 0)
     return blended
 
+
 def draw_projected_stl_edges(img, stl_path, rvec, tvec, camera_matrix, color=(0, 0, 0)):
-    """
-    画出 STL 模型的边界边（只属于一个面的边），兼容无 edges_unique_faces 的情况
-    """
     mesh_obj = trimesh.load(stl_path, process=True)
     if isinstance(mesh_obj, trimesh.Scene):
         mesh_obj = trimesh.util.concatenate([g for g in mesh_obj.geometry.values()])
-
-    # 提取所有面构成的边
     all_edges = mesh_obj.edges_sorted
     edges_sorted, edges_count = np.unique(all_edges, axis=0, return_counts=True)
-
-    # 只属于一个面的边（边界边）
     boundary_edges = edges_sorted[edges_count == 1]
-
-    # 投影所有顶点
     vertices = mesh_obj.vertices
     imgpts, _ = cv2.projectPoints(vertices, rvec, tvec, camera_matrix, None)
     imgpts = imgpts.squeeze().astype(int)
-
-    # 画出边界边
     for edge in boundary_edges:
         pt1 = tuple(imgpts[edge[0]])
         pt2 = tuple(imgpts[edge[1]])
-        cv2.line(img, pt1, pt2, (0, 150, 150), 20)  # 深蓝色 + 粗一点
-
+        cv2.line(img, pt1, pt2, (0, 150, 150), 20)
     return img
 
-#---------Define 2D Points to 3D Points Matching----------
+
 def load_model_points_from_json(json_path):
     with open(json_path, "r") as f:
         data = json.load(f)
@@ -93,11 +69,12 @@ def load_model_points_from_json(json_path):
     points = np.array([[d["x"], d["y"], d["z"]] for d in data], dtype=np.float32)
     return points, ids
 
-# ---------- 预处理图像 ----------
+
 def preprocess_image(img):
     img = img.astype(np.float32) / 255.0
-    img = img.transpose(2, 0, 1)  # HWC -> CHW
+    img = img.transpose(2, 0, 1)
     return img
+
 
 def pad_to_multiple(img, divisor=32):
     h, w = img.shape[:2]
@@ -106,11 +83,10 @@ def pad_to_multiple(img, divisor=32):
     img_padded = np.pad(img, ((0, pad_h), (0, pad_w), (0, 0)), mode='reflect')
     return img_padded, (h, w)
 
-# ---------- 提取关键点 ----------
+
 def extract_peak_coords(heatmap_tensor, threshold=0.15, nms_radius=5, merge_distance=15, top_k=14, orig_size=None):
     heatmap_np = heatmap_tensor.squeeze(0).detach().cpu().numpy()
     raw_coords = []
-
     for hm in heatmap_np:
         neighborhood = (nms_radius * 2) + 1
         local_max = (hm == scipy.ndimage.maximum_filter(hm, size=neighborhood))
@@ -118,11 +94,9 @@ def extract_peak_coords(heatmap_tensor, threshold=0.15, nms_radius=5, merge_dist
         ys, xs = np.where(mask)
         keypoints = [(x, y, hm[y, x]) for x, y in zip(xs, ys)]
         raw_coords.extend(keypoints)
-
     raw_coords.sort(key=lambda k: k[2], reverse=True)
     final_coords = []
     visited = np.zeros(len(raw_coords), dtype=bool)
-
     for i, (x_i, y_i, score_i) in enumerate(raw_coords):
         if visited[i]:
             continue
@@ -130,38 +104,25 @@ def extract_peak_coords(heatmap_tensor, threshold=0.15, nms_radius=5, merge_dist
         for j, (x_j, y_j, _) in enumerate(raw_coords):
             if not visited[j] and np.hypot(x_i - x_j, y_i - y_j) < merge_distance:
                 visited[j] = True
-
     if len(final_coords) > top_k:
         final_coords = final_coords[:top_k]
-
     coords = [(x, y) for (x, y, _) in final_coords]
-
     if orig_size is not None:
         h_hm, w_hm = heatmap_np.shape[1:]
         scale_x = orig_size[1] / w_hm
         scale_y = orig_size[0] / h_hm
         coords = [(int(x * scale_x), int(y * scale_y)) for (x, y) in coords]
-
     return coords
 
+
 def draw_keypoints_only(img, keypoints):
-    """
-    只画关键点（不画线）
-    """
     for i, (x, y) in enumerate(keypoints):
-        cv2.circle(img, (int(x), int(y)), 5, (0, 255, 255), -1)  # 黄色点
+        cv2.circle(img, (int(x), int(y)), 5, (0, 255, 255), -1)
         cv2.putText(img, str(i), (int(x), int(y) - 5), cv2.FONT_HERSHEY_SIMPLEX,
-                    0.5, (255, 0, 255), 1)  # 紫色编号
+                    0.5, (255, 0, 255), 1)
     return img
 
-# ---------- 可视化 ----------
-def visualize_keypoints(img, keypoints):
-    for idx, (x, y) in enumerate(keypoints):
-        cv2.circle(img, (int(x), int(y)), 5, (0, 255, 0), -1)
-        cv2.putText(img, str(idx), (int(x)+6, int(y)-6), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 255), 1)
-    return img
 
-# ---------- 主函数 ----------
 def val_video(video_path):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = HybridHeatmapUNet(num_keypoints=15).to(device)
@@ -179,11 +140,19 @@ def val_video(video_path):
         print("❌ 无法打开视频")
         return
 
+    # 视频保存
+    save_path = "output_tracking.avi"
+    fourcc = cv2.VideoWriter_fourcc(*'XVID')
+    out = cv2.VideoWriter(save_path, fourcc, 30.0, (1280, 720))
+
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     prev_gray = None
     prev_pts = None
     frame_id = 0
     fps_history = []
+
+    stl_path = "/home/wangzhe/ICRA2025/MY/STL/PART2/Part2.STL"
+    camera_matrix = get_camera_matrix(orig_w, orig_h)
 
     while True:
         ret, frame = cap.read()
@@ -192,7 +161,6 @@ def val_video(video_path):
             break
 
         t_start = time.time()
-
         frame_resized = cv2.resize(frame, (1280, 720))
         gray = cv2.cvtColor(frame_resized, cv2.COLOR_BGR2GRAY)
         frame_id += 1
@@ -207,32 +175,20 @@ def val_video(video_path):
                 pred_heatmap = pred_heatmap[:, :, :orig_hw[0], :orig_hw[1]]
 
             keypoints = extract_peak_coords(pred_heatmap, orig_size=orig_hw)
-            print(len(keypoints))
-
             if len(keypoints) < 4:
                 print(f"❌ 检测到关键点数量过少，当前是 {len(keypoints)}，PnP 失败")
                 return
 
-            model_json_path = "/home/wangzhe/ICRA2025/MY/STL/PART2/Part2.json"
-            object_points, object_ids = load_model_points_from_json(model_json_path)
-            if max(EPnP_INDEXES) >= len(keypoints):
-                print(f"❌ PnP所需索引超出关键点数量，检测到 {len(keypoints)} 个点，索引要求最大为 {max(EPnP_INDEXES)}")
-                return
             image_points = np.array([keypoints[i] for i in EPnP_INDEXES], dtype=np.float32)
             selected_object_ids = [IMAGE_TO_STL_ID[i] for i in EPnP_INDEXES]
             selected_object_points = np.array(
                 [object_points[object_ids.index(i)] for i in selected_object_ids],
                 dtype=np.float32
             )
-
-            camera_matrix = get_camera_matrix(orig_w, orig_h)
             rvec, tvec = solve_pnp_epnp(selected_object_points, image_points, camera_matrix)
 
-            # ✅ 渲染流程
-            stl_path = "/home/wangzhe/ICRA2025/MY/STL/PART2/Part2.STL"
             frame_with_kps = draw_keypoints_only(frame_resized.copy(), keypoints)
-            frame_with_stl = render_projected_stl_with_normal_zbuffer(frame_with_kps, stl_path, rvec, tvec,
-                                                                      camera_matrix)
+            frame_with_stl = render_projected_stl_with_normal_zbuffer(frame_with_kps, stl_path, rvec, tvec, camera_matrix)
             frame_with_edges = draw_projected_stl_edges(frame_with_stl, stl_path, rvec, tvec, camera_matrix)
 
             prev_pts = np.array(keypoints, dtype=np.float32).reshape(-1, 1, 2)
@@ -241,7 +197,6 @@ def val_video(video_path):
             next_pts, status, _ = cv2.calcOpticalFlowPyrLK(prev_gray, gray, prev_pts, None)
             prev_gray = gray.copy()
             prev_pts = next_pts
-
             tracked_keypoints = next_pts.reshape(-1, 2)
 
             if len(tracked_keypoints) >= max(EPnP_INDEXES) + 1:
@@ -251,39 +206,35 @@ def val_video(video_path):
                     [object_points[object_ids.index(i)] for i in selected_object_ids],
                     dtype=np.float32
                 )
-
-                # 再次解算姿态
                 rvec, tvec = solve_pnp_epnp(selected_object_points, image_points, camera_matrix)
-
-                # 可视化渲染
                 frame_with_kps = draw_keypoints_only(frame_resized.copy(), tracked_keypoints)
                 frame_with_stl = render_projected_stl_with_normal_zbuffer(frame_with_kps, stl_path, rvec, tvec, camera_matrix)
                 frame_with_edges = draw_projected_stl_edges(frame_with_stl, stl_path, rvec, tvec, camera_matrix)
-
             else:
                 print(f"❌ 后续帧关键点数量不足，当前为 {len(tracked_keypoints)}，跳过PnP解算")
-                frame_with_kps = frame_resized.copy()
+                frame_with_edges = frame_resized.copy()
 
-
-        # ---------- 显示帧率 ----------
+        # 帧率显示
         fps = 1.0 / (time.time() - t_start + 1e-6)
         fps_history.append(fps)
         if len(fps_history) > 30:
             fps_history.pop(0)
         fps_avg = sum(fps_history) / len(fps_history)
 
-        cv2.putText(frame_with_edges, f"FPS: {fps_avg:.1f}", (20, 30),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
-        cv2.putText(frame_with_edges, f"Frame: {frame_id}/{total_frames}", (20, 60),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 0), 2)
+        cv2.putText(frame_with_edges, f"FPS: {fps_avg:.1f}", (20, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
+        cv2.putText(frame_with_edges, f"Frame: {frame_id}/{total_frames}", (20, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 0), 2)
 
+        # 显示与写入视频
         cv2.imshow("Keypoint Tracking (1280x720)", frame_with_edges)
+        out.write(frame_with_edges)
 
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
 
     cap.release()
+    out.release()
     cv2.destroyAllWindows()
+
 
 if __name__ == "__main__":
     val_video("/home/wangzhe/ICRA2025/MY/video/Part2Demo.mp4")
