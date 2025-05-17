@@ -43,9 +43,33 @@ def extract_peak_coords(heatmap_tensor, threshold=0.15, nms_radius=5, merge_dist
         coords = [(int(x * scale_x), int(y * scale_y)) for (x, y) in coords]
     return coords
 
-def draw_keypoints_only(img, keypoints):
-    for i, (x, y) in enumerate(keypoints):
-        cv2.circle(img, (int(x), int(y)), 5, (0, 255, 255), -1)
-        cv2.putText(img, str(i), (int(x), int(y) - 5), cv2.FONT_HERSHEY_SIMPLEX,
-                    0.5, (255, 0, 255), 1)
+
+def draw_keypoints_only(img, keypoints, radius=5, color=(0, 255, 255), draw_index=True, font_scale=0.5):
+    """
+    在图像上绘制关键点和编号，编号使用黑底白字，适合浅背景。
+
+    参数:
+        img: 输入图像
+        keypoints: Nx2 数组，关键点坐标
+        radius: 圆点半径
+        color: 圆点颜色 (BGR)
+        draw_index: 是否绘制编号
+    """
+    for idx, pt in enumerate(keypoints):
+        x, y = pt
+        if np.isnan(x) or np.isnan(y):
+            continue
+
+        # 画关键点圆圈
+        cv2.circle(img, (int(x), int(y)), radius, color, -1)
+
+        if draw_index:
+            text = str(idx)
+            org = (int(x) + 5, int(y) - 5)
+
+            # 黑色描边（底层）
+            cv2.putText(img, text, org, cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 0, 0), 3, cv2.LINE_AA)
+            # 白色文本（上层）
+            cv2.putText(img, text, org, cv2.FONT_HERSHEY_SIMPLEX, font_scale, (255, 255, 255), 1, cv2.LINE_AA)
     return img
+

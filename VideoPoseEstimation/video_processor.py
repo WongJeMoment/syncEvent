@@ -11,6 +11,8 @@ import numpy as np
 import torch
 import os
 import time
+from optical_flow_tracker import track_keypoints
+
 def val_video(video_path):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = HybridHeatmapUNet(num_keypoints=15).to(device)
@@ -82,7 +84,7 @@ def val_video(video_path):
             prev_pts = np.array(keypoints, dtype=np.float32).reshape(-1, 1, 2)
             prev_gray = gray
         else:
-            next_pts, status, _ = cv2.calcOpticalFlowPyrLK(prev_gray, gray, prev_pts, None)
+            next_pts, status = track_keypoints(prev_gray, gray, prev_pts)
             prev_gray = gray.copy()
             prev_pts = next_pts
             tracked_keypoints = next_pts.reshape(-1, 2)
