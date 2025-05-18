@@ -132,6 +132,7 @@ def main():
     model_json_path = "/home/wangzhe/ICRA2025/MY/STL/PART2/Part2.json"
     object_points, object_ids = load_model_points_from_json(model_json_path)
 
+
     image_points = np.array([keypoints[i] for i in EPnP_INDEXES], dtype=np.float32)
     selected_object_ids = [IMAGE_TO_STL_ID[i] for i in EPnP_INDEXES]
     selected_object_points = np.array(

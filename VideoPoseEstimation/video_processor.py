@@ -1,3 +1,9 @@
+import cv2
+import numpy as np
+import torch
+import os
+import time
+
 from keypoint_utils import preprocess_image, pad_to_multiple, extract_peak_coords, draw_keypoints_only
 from stl_renderer import render_projected_stl_with_normal_zbuffer, draw_projected_stl_edges
 from pose_utils import load_model_points_from_json
@@ -5,12 +11,6 @@ from epnp_solver import solve_pnp_epnp
 from camera_config import get_camera_matrix
 from model import HybridHeatmapUNet
 from keypoint_map import IMAGE_TO_STL_ID, EPnP_INDEXES
-# 以及 OpenCV / numpy / torch 等
-import cv2
-import numpy as np
-import torch
-import os
-import time
 from optical_flow_tracker import track_keypoints
 
 def val_video(video_path):
@@ -30,7 +30,6 @@ def val_video(video_path):
         print("❌ 无法打开视频")
         return
 
-    # 视频保存
     save_path = "output_tracking.avi"
     fourcc = cv2.VideoWriter_fourcc(*'XVID')
     out = cv2.VideoWriter(save_path, fourcc, 30.0, (1280, 720))
@@ -89,6 +88,7 @@ def val_video(video_path):
             prev_pts = next_pts
             tracked_keypoints = next_pts.reshape(-1, 2)
 
+            compensation_triggered = False
             if len(tracked_keypoints) >= max(EPnP_INDEXES) + 1:
                 image_points = np.array([tracked_keypoints[i] for i in EPnP_INDEXES], dtype=np.float32)
                 selected_object_ids = [IMAGE_TO_STL_ID[i] for i in EPnP_INDEXES]
@@ -96,15 +96,51 @@ def val_video(video_path):
                     [object_points[object_ids.index(i)] for i in selected_object_ids],
                     dtype=np.float32
                 )
+
                 rvec, tvec = solve_pnp_epnp(selected_object_points, image_points, camera_matrix)
+
+                projected_pts, _ = cv2.projectPoints(selected_object_points, rvec, tvec, camera_matrix, distCoeffs=None)
+                projected_pts = projected_pts.reshape(-1, 2)
+
+                distances = np.linalg.norm(projected_pts - image_points, axis=1)
+                if np.any(distances > 15):  # 阈值为15像素
+                    print(f"⚠️ 投影误差过大（最大 {distances.max():.1f}px），触发补偿")
+                    compensation_triggered = True
+            else:
+                print(f"❌ 后续帧关键点数量不足：{len(tracked_keypoints)}，触发补偿")
+                compensation_triggered = True
+
+            if compensation_triggered:
+                padded_img, orig_hw = pad_to_multiple(frame_resized)
+                img_input = preprocess_image(padded_img)
+                img_tensor = torch.from_numpy(img_input).unsqueeze(0).to(device)
+                with torch.no_grad():
+                    pred_heatmap = model(img_tensor).cpu()
+                    pred_heatmap = pred_heatmap[:, :, :orig_hw[0], :orig_hw[1]]
+                keypoints = extract_peak_coords(pred_heatmap, orig_size=orig_hw)
+                if len(keypoints) < 4:
+                    print(f"❌ 补偿后关键点数量仍不足：{len(keypoints)}")
+                    frame_with_edges = frame_resized.copy()
+                    continue
+
+                image_points = np.array([keypoints[i] for i in EPnP_INDEXES], dtype=np.float32)
+                selected_object_ids = [IMAGE_TO_STL_ID[i] for i in EPnP_INDEXES]
+                selected_object_points = np.array(
+                    [object_points[object_ids.index(i)] for i in selected_object_ids],
+                    dtype=np.float32
+                )
+                rvec, tvec = solve_pnp_epnp(selected_object_points, image_points, camera_matrix)
+
+                frame_with_kps = draw_keypoints_only(frame_resized.copy(), keypoints)
+                frame_with_stl = render_projected_stl_with_normal_zbuffer(frame_with_kps, stl_path, rvec, tvec, camera_matrix)
+                frame_with_edges = draw_projected_stl_edges(frame_with_stl, stl_path, rvec, tvec, camera_matrix)
+
+                prev_pts = np.array(keypoints, dtype=np.float32).reshape(-1, 1, 2)
+            else:
                 frame_with_kps = draw_keypoints_only(frame_resized.copy(), tracked_keypoints)
                 frame_with_stl = render_projected_stl_with_normal_zbuffer(frame_with_kps, stl_path, rvec, tvec, camera_matrix)
                 frame_with_edges = draw_projected_stl_edges(frame_with_stl, stl_path, rvec, tvec, camera_matrix)
-            else:
-                print(f"❌ 后续帧关键点数量不足，当前为 {len(tracked_keypoints)}，跳过PnP解算")
-                frame_with_edges = frame_resized.copy()
 
-        # 帧率显示
         fps = 1.0 / (time.time() - t_start + 1e-6)
         fps_history.append(fps)
         if len(fps_history) > 30:
@@ -114,7 +150,6 @@ def val_video(video_path):
         cv2.putText(frame_with_edges, f"FPS: {fps_avg:.1f}", (20, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
         cv2.putText(frame_with_edges, f"Frame: {frame_id}/{total_frames}", (20, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 0), 2)
 
-        # 显示与写入视频
         cv2.imshow("Keypoint Tracking (1280x720)", frame_with_edges)
         out.write(frame_with_edges)
 
