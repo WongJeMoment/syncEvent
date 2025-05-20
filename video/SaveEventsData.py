@@ -18,7 +18,7 @@ CAMERA_CONFIGS = [
     {"serial": "00051197", "mode": "master"},
 ]
 
-MAX_EVENTS = 300000
+MAX_EVENTS =300000
 OUTPUT_DIR = "output"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
@@ -76,14 +76,14 @@ def setup_camera(serial, cam_mode):
 
         window.set_keyboard_callback(keyboard_cb)
 
-        frame_gen = PeriodicFrameGenerationAlgorithm(width, height, fps=30, palette=ColorPalette.CoolWarm)
+        frame_gen = PeriodicFrameGenerationAlgorithm(width, height, fps=100, palette=ColorPalette.CoolWarm)
 
         def on_frame_cb(ts, frame):
             nonlocal video_writer
             window.show_async(frame)
             if video_writer is None:
                 h, w = frame.shape[:2]
-                video_writer = cv2.VideoWriter(video_path, fourcc, 30.0, (w, h))
+                video_writer = cv2.VideoWriter(video_path, fourcc, 100.0, (w, h))
             video_writer.write(frame)
 
         frame_gen.set_output_callback(on_frame_cb)
