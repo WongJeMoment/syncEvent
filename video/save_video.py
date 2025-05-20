@@ -5,7 +5,7 @@ import os
 import cv2
 
 sys.path.append("/usr/lib/python3/dist-packages/")
-# save video
+
 from metavision_core.event_io import EventsIterator
 from metavision_core.event_io.raw_reader import initiate_device
 from metavision_sdk_core import PeriodicFrameGenerationAlgorithm, ColorPalette
@@ -16,6 +16,9 @@ CAMERA_CONFIGS = [
     {"serial": "00051195", "mode": "slave"},
     {"serial": "00051197", "mode": "master"},
 ]
+
+# 每批最多处理的事件数
+MAX_EVENTS = 300000
 
 def setup_camera(serial, cam_mode):
     print(f"\n🚀 Starting camera {serial} in mode: {cam_mode.upper()}")
@@ -79,7 +82,16 @@ def setup_camera(serial, cam_mode):
 
         for evs in mv_iterator:
             EventLoop.poll_and_dispatch()
+
+            # 限制每批处理的最大事件数
+            if len(evs) > MAX_EVENTS:
+                evs = evs[:MAX_EVENTS]
+                print(f"[{serial}] ⚠️ Truncated to {MAX_EVENTS} events")
+
+            print(f"[{serial}] Events received: {len(evs)}")
+
             frame_gen.process_events(evs)
+
             if window.should_close():
                 break
 
