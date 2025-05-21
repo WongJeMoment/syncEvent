@@ -23,17 +23,10 @@ def setup_camera(serial, cam_mode):
     try:
         device = initiate_device(path=serial)
     except Exception as e:
-        print(f"[{serial}] ❌ Could not initiate device: {e}")
         return
-
-    try:
-        print(f"[{serial}] ✅ Connected to device with serial: {device.get_serial()}")
-    except:
-        print(f"[{serial}] ⚠️  Warning: Unable to get serial number.")
 
     sync_iface = device.get_i_camera_synchronization()
     if not sync_iface:
-        print(f"[{serial}] ❌ Device does not support synchronization interface.")
         return
 
     try:
@@ -46,7 +39,6 @@ def setup_camera(serial, cam_mode):
             print(f"[{serial}] ✅ Set to SLAVE mode.")
             print(f"[{serial}] ⏳ Waiting for master sync signal to start...")
     except Exception as e:
-        print(f"[{serial}] ❌ Failed to set {cam_mode} mode: {e}")
         return
 
     mv_iterator = EventsIterator.from_device(device=device)
@@ -75,9 +67,6 @@ def setup_camera(serial, cam_mode):
             # 限制事件数量
             if len(evs) > MAX_EVENTS:
                 evs = evs[:MAX_EVENTS]
-                print(f"[{serial}] ⚠️ Truncated to {MAX_EVENTS} events")
-
-            print(f"[{serial}] Events received: {len(evs)}")
 
             frame_gen.process_events(evs)
 
