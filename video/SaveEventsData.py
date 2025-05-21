@@ -12,15 +12,14 @@ from metavision_core.event_io.raw_reader import initiate_device
 from metavision_sdk_core import PeriodicFrameGenerationAlgorithm, ColorPalette
 from metavision_sdk_ui import EventLoop, BaseWindow, MTWindow, UIKeyEvent
 
-# 相机配置
+# 配置两个设备的信息
 CAMERA_CONFIGS = [
     {"serial": "00051195", "mode": "slave"},
     {"serial": "00051197", "mode": "master"},
 ]
 
-MAX_EVENTS =300000
-OUTPUT_DIR = "output"
-os.makedirs(OUTPUT_DIR, exist_ok=True)
+# 每次最大处理的事件数（但不丢弃事件，只是分批处理）
+MAX_EVENTS = 100000
 
 def setup_camera(serial, cam_mode):
     print(f"\n🚀 Starting camera {serial} in mode: {cam_mode.upper()}")
@@ -58,13 +57,15 @@ def setup_camera(serial, cam_mode):
     height, width = mv_iterator.get_size()
     title = f"Metavision - {cam_mode.upper()} ({serial})"
 
-    video_path = os.path.join(OUTPUT_DIR, f"{cam_mode}_{serial}.avi")
-    npy_path = os.path.join(OUTPUT_DIR, f"{cam_mode}_{serial}_events.npy")
+    # ✅ 创建输出文件夹（如不存在）
+    os.makedirs("output", exist_ok=True)
 
     video_writer = None
+    video_path = os.path.join("output", f"{cam_mode}_{serial}.avi")
+    npy_path = os.path.join("output", f"{cam_mode}_{serial}_events.npy")
     fourcc = cv2.VideoWriter_fourcc(*'XVID')
 
-    # ✅ 用字段列表代替事件对象列表
+    # ✅ 准备保存事件数据
     all_x, all_y, all_t, all_p = [], [], [], []
 
     with MTWindow(title=title, width=width, height=height,
@@ -73,17 +74,16 @@ def setup_camera(serial, cam_mode):
         def keyboard_cb(key, scancode, action, mods):
             if key in [UIKeyEvent.KEY_ESCAPE, UIKeyEvent.KEY_Q]:
                 window.set_close_flag()
-
         window.set_keyboard_callback(keyboard_cb)
 
-        frame_gen = PeriodicFrameGenerationAlgorithm(width, height, fps=100, palette=ColorPalette.CoolWarm)
+        frame_gen = PeriodicFrameGenerationAlgorithm(width, height, fps=30, palette=ColorPalette.CoolWarm)
 
         def on_frame_cb(ts, frame):
             nonlocal video_writer
             window.show_async(frame)
             if video_writer is None:
                 h, w = frame.shape[:2]
-                video_writer = cv2.VideoWriter(video_path, fourcc, 100.0, (w, h))
+                video_writer = cv2.VideoWriter(video_path, fourcc, 30.0, (w, h))
             video_writer.write(frame)
 
         frame_gen.set_output_callback(on_frame_cb)
@@ -91,22 +91,16 @@ def setup_camera(serial, cam_mode):
         for evs in mv_iterator:
             EventLoop.poll_and_dispatch()
 
-            if len(evs) == 0:
-                continue
+            # ✅ 分批处理事件，同时保留全部事件
+            for i in range(0, len(evs), MAX_EVENTS):
+                batch = evs[i:i+MAX_EVENTS]
+                frame_gen.process_events(batch)
 
-            if len(evs) > MAX_EVENTS:
-                evs = evs[:MAX_EVENTS]
-                print(f"[{serial}] ⚠️ Truncated to {MAX_EVENTS} events")
-
-            print(f"[{serial}] Events received: {len(evs)}")
-
-            # ✅ 收集字段到各自数组
-            all_x.append(evs['x'])
-            all_y.append(evs['y'])
-            all_t.append(evs['t'])
-            all_p.append(evs['p'].astype(np.int8))
-
-            frame_gen.process_events(evs)
+                # ✅ 收集事件字段
+                all_x.append(batch['x'])
+                all_y.append(batch['y'])
+                all_t.append(batch['t'])
+                all_p.append(batch['p'].astype(np.int8))  # polarity 转为 int8
 
             if window.should_close():
                 break
@@ -115,10 +109,9 @@ def setup_camera(serial, cam_mode):
         video_writer.release()
         print(f"🎞️ Video saved: {video_path}")
 
-    # ✅ 合并保存为 .npy
+    # ✅ 保存为 .npy
     if all_x:
         try:
-            print(f"[{serial}] 🧩 Concatenating and saving event data...")
             x = np.concatenate(all_x)
             y = np.concatenate(all_y)
             t = np.concatenate(all_t)
@@ -134,18 +127,15 @@ def setup_camera(serial, cam_mode):
             print(f"💾 Events saved as .npy: {npy_path}")
         except Exception as e:
             print(f"❌ Failed to save events for {serial}: {e}")
-    else:
-        print(f"[{serial}] ⚠️ No events collected — .npy not saved.")
 
 def main():
-    print(f"📁 All outputs will be saved in: {os.path.abspath(OUTPUT_DIR)}")
     threads = []
 
     for config in CAMERA_CONFIGS:
         t = threading.Thread(target=setup_camera, args=(config["serial"], config["mode"]))
         t.start()
         threads.append(t)
-        time.sleep(1)
+        time.sleep(1)  # 小延迟保证先启动 slave
 
     for t in threads:
         t.join()
