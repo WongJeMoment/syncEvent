@@ -128,14 +128,18 @@ def train():
             total_dist += dist
 
         avg_dist = total_dist / (total_kpts + 1e-6)
-        print(f"[Epoch {epoch+1}] Loss: {total_loss:.4f} | Avg Distance: {avg_dist:.2f}")
+        print(f"[Epoch {epoch + 1}] Loss: {total_loss:.4f} | Avg Distance: {avg_dist:.2f}")
 
         visualize(imgs[0].cpu(), heatmaps[0].cpu(), preds[0].cpu())
 
+        # ✅ 保存最优模型
         if avg_dist < best_dist:
             best_dist = avg_dist
             torch.save(model.state_dict(), best_model_path)
-            print(f"✅ Best model saved at epoch {epoch+1} (Avg Dist: {avg_dist:.2f})")
+            print(f"✅ Best model saved at epoch {epoch + 1} (Avg Dist: {avg_dist:.2f})")
+
+        # ✅ 每轮保存最新模型
+        torch.save(model.state_dict(), "checkpoints/latest_model.pt")
 
 
 if __name__ == "__main__":
