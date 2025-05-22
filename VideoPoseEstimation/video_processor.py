@@ -14,20 +14,18 @@ from keypoint_map import IMAGE_TO_STL_ID, EPnP_INDEXES
 from optical_flow_tracker import track_keypoints
 from DrawSTLPoints import draw_projected_keypoints
 from KeypointCompensation import selective_correct_keypoints
-
-
-
+from config import *
 
 def val_video(video_path):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = HybridHeatmapUNet(num_keypoints=15).to(device)
-    model_path = "/home/wangzhe/ICRA2025/MY/models/checkpoints/best_model.pt"
+    model = HybridHeatmapUNet(num_keypoints=KeyNumber).to(device)
+    model_path = TRAIN_DIR
     assert os.path.exists(model_path), "❌ 未找到模型"
     model.load_state_dict(torch.load(model_path, map_location=device))
     model.eval()
     orig_h, orig_w = 1280, 720
 
-    model_json_path = "/home/wangzhe/ICRA2025/MY/STL/PART2/Part2.json"
+    model_json_path = STL_JSON_DIR
     object_points, object_ids = load_model_points_from_json(model_json_path)
 
     cap = cv2.VideoCapture(video_path)
@@ -45,7 +43,7 @@ def val_video(video_path):
     frame_id = 0
     fps_history = []
 
-    stl_path = "/home/wangzhe/ICRA2025/MY/STL/PART2/Part2.STL"
+    stl_path = STL_MODEL_DIR
     camera_matrix = get_camera_matrix(orig_w, orig_h)
 
     while True:
