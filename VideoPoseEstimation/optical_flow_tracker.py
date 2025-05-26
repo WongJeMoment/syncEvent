@@ -1,40 +1,52 @@
-# optical_flow_tracker.py
-
 import cv2
 import numpy as np
+from keypoint_tracker.PointsKalman import PointKalman
 
-def track_keypoints(prev_gray, curr_gray, prev_pts, fb_thresh=1.5):
+def track_keypoints(prev_gray, curr_gray, prev_pts, kf_bank=None, threshold=2.0):
     """
-    持续关键点追踪器（不会让点消失）：
-    - 保持关键点顺序不变
-    - 跟踪失败时保留上一帧位置
-    - 允许后续帧继续追踪这些点
-
-    参数:
-        prev_gray: 前一帧灰度图
-        curr_gray: 当前帧灰度图
-        prev_pts: 前一帧关键点 Nx1x2 float32
-
-    返回:
-        next_pts_fixed: 当前帧关键点 Nx1x2（全保留）
-        status: Nx1（1=成功，0=失败，但仍保留位置）
+    四向光流一致性校验 + Kalman
+    （已移除遮挡检测模块）
     """
+    if prev_pts is None or len(prev_pts) == 0:
+        return prev_pts, np.zeros((0, 1), dtype=np.uint8)
+
+    if kf_bank is None:
+        kf_bank = [PointKalman(pt.ravel()) for pt in prev_pts]
+
     lk_params = dict(
-        winSize=(21, 21),
-        maxLevel=3,
-        criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 30, 0.01)
+        winSize=(91, 91),
+        maxLevel=9,
+        flags=cv2.OPTFLOW_LK_GET_MIN_EIGENVALS,
+        minEigThreshold=1e-5,
+        criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 1000, 0.01)
     )
 
-    next_pts, status_fwd, _ = cv2.calcOpticalFlowPyrLK(prev_gray, curr_gray, prev_pts, None, **lk_params)
-    prev_back, status_bwd, _ = cv2.calcOpticalFlowPyrLK(curr_gray, prev_gray, next_pts, None, **lk_params)
+    # 光流前向 & 反向 & round-trip 检查
+    next_pts, st_fwd, _ = cv2.calcOpticalFlowPyrLK(prev_gray, curr_gray, prev_pts, None, **lk_params)
+    back_pts, st_back, _ = cv2.calcOpticalFlowPyrLK(curr_gray, prev_gray, next_pts, None, **lk_params)
+    next2_pts, st_fwd2, _ = cv2.calcOpticalFlowPyrLK(curr_gray, prev_gray, next_pts, None, **lk_params)
+    reprojected_next, st_rev2, _ = cv2.calcOpticalFlowPyrLK(prev_gray, curr_gray, next2_pts, None, **lk_params)
 
-    fb_err = np.linalg.norm(prev_pts - prev_back, axis=2).reshape(-1)
-    status = (status_fwd.reshape(-1) == 1) & (status_bwd.reshape(-1) == 1) & (fb_err < fb_thresh)
+    forward_error = np.linalg.norm(prev_pts.squeeze() - back_pts.squeeze(), axis=1)
+    round_trip_error = np.linalg.norm(next_pts.squeeze() - reprojected_next.squeeze(), axis=1)
 
-    # 默认：所有关键点都保留，失败点用 prev_pts 原位置补上
-    next_pts_fixed = next_pts.copy()
+    # 四向一致性状态判断
+    status = ((st_fwd.flatten() == 1) &
+              (st_back.flatten() == 1) &
+              (st_fwd2.flatten() == 1) &
+              (st_rev2.flatten() == 1) &
+              (forward_error < threshold) &
+              (round_trip_error < threshold))
+
+    next_pts_fixed = np.zeros_like(prev_pts)
+
     for i, ok in enumerate(status):
-        if not ok:
-            next_pts_fixed[i] = prev_pts[i]  # 保留原始位置
+        if ok:
+            pt = next_pts[i].ravel()
+            kf_bank[i].correct(pt)
+        else:
+            pt = kf_bank[i].predict()
+            status[i] = 0
+        next_pts_fixed[i, 0] = pt
 
     return next_pts_fixed, status.reshape(-1, 1).astype(np.uint8)
