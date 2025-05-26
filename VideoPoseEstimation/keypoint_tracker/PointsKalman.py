@@ -38,3 +38,7 @@ class PointKalman:
     def set_process_noise_scale(self, scale):
         scale = np.clip(scale, 0.5, 10.0)
         self.kf.processNoiseCov = self.base_Q * scale
+
+    def set_measurement_noise_scale(self, scale):
+        """动态调整观测噪声协方差 R（越小表示越信任观测）"""
+        self.kf.measurementNoiseCov = self.base_R * scale
