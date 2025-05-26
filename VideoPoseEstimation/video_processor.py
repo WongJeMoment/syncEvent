@@ -82,7 +82,6 @@ def val_video(video_path):
             frame_with_stl = render_projected_stl_with_normal_zbuffer(frame_with_kps, stl_path, rvec, tvec, camera_matrix)
             frame_with_edges = draw_projected_stl_edges(frame_with_stl, stl_path, rvec, tvec, camera_matrix)
             frame_with_edges = draw_projected_keypoints(frame_with_edges, np.array(object_points, dtype=np.float32), rvec, tvec, camera_matrix)
-
             prev_pts = np.array(keypoints, dtype=np.float32).reshape(-1, 1, 2)
             prev_gray = gray
 
@@ -94,7 +93,7 @@ def val_video(video_path):
             if len(tracked_keypoints) < max(EPnP_INDEXES) + 1:
                 print("❌ 跟踪点数量不足，跳过")
                 prev_pts = None
-                frame_with_edges = frame_resized.copy()
+                # frame_with_edges = frame_resized.copy()
                 continue
 
             image_points = np.array([tracked_keypoints[i] for i in EPnP_INDEXES], dtype=np.float32)
@@ -111,7 +110,7 @@ def val_video(video_path):
                 tvec,
                 camera_matrix,
                 IMAGE_TO_STL_ID,
-                threshold=10.0  # 可根据实际调节为 5~15
+                threshold=5.0  # 可根据实际调节为 5~15
             )
 
             prev_pts = tracked_keypoints.reshape(-1, 1, 2)

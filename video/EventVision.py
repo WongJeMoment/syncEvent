@@ -2,44 +2,45 @@ import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 
-def plot_event_3d(npy_path, sample_ratio=0.01):
-    print(f"📂 Loading events from: {npy_path}")
-    events = np.load(npy_path)
 
-    # 随机采样部分数据以减少渲染压力
+def plot_event_paper_style(npy_path, sample_ratio=0.001):  # 稀疏化
+    events = np.load(npy_path, allow_pickle=True)
     N = len(events)
     indices = np.random.choice(N, size=int(N * sample_ratio), replace=False)
     sampled = events[indices]
 
-    # 获取坐标与极性
     x, y, t, p = sampled['x'], sampled['y'], sampled['t'], sampled['p']
-    t = (t - t.min()) / 1e6  # 微秒转秒，归一化时间
+    t = (t - t.min()) / 1e6
 
-    # 绘图
-    fig = plt.figure(figsize=(16, 9))  # 图像 16:9
+    fig = plt.figure(figsize=(6, 6))
     ax = fig.add_subplot(111, projection='3d')
 
-    # 设置 3D 坐标轴的视觉比例为 16:9:9（X:Y:Z）
-    ax.set_box_aspect([16, 9, 9])
+    ax.scatter(x[p > 0], t[p > 0], y[p > 0], c='red', s=3, alpha=0.6)
+    ax.scatter(x[p <= 0], t[p <= 0], y[p <= 0], c='blue', s=3, alpha=0.6)
 
-    # 区分正负极性
-    pos_mask = p > 0
-    neg_mask = ~pos_mask
+    # 标签样式
+    label_font = {'fontsize': 14, 'labelpad': 12, 'weight': 'bold'}
+    tick_font = {'labelsize': 12}
 
-    # 绘制散点图（X轴: 时间, Y轴: y, Z轴: x）
-    ax.scatter(t[pos_mask], y[pos_mask], x[pos_mask], c='red', s=0.1, alpha=0.6)
-    ax.scatter(t[neg_mask], y[neg_mask], x[neg_mask], c='blue', s=0.1, alpha=0.6)
+    ax.set_xlabel("X", **label_font)
+    ax.set_ylabel("Time", **label_font)   # 现在 T 在 Y 轴
+    ax.set_zlabel("Y", **label_font)      # Y 在 Z 轴
+    ax.tick_params(**tick_font)
 
-    # 标签与视角
-    ax.set_xlabel('Time (s)')
-    ax.set_ylabel('Y')
-    ax.set_zlabel('X')
-    ax.view_init(elev=20, azim=-60)  # 可调视觉角度
+    # 视角
+    ax.view_init(elev=30, azim=-60)
+
+    # 网格
+    ax.grid(True, color='gray', linestyle='--', linewidth=0.5, alpha=0.5)
+
+    # 背景与线条
+    ax.set_facecolor("white")
+    fig.patch.set_facecolor("white")
+    for axis in [ax.w_xaxis, ax.w_yaxis, ax.w_zaxis]:
+        axis.line.set_color((0.5, 0.5, 0.5, 0.3))
 
     plt.tight_layout()
     plt.show()
 
-# === 使用示例 ===
-if __name__ == "__main__":
-    npy_file_path = "output/CubeVideo/Rotation40rpm/master_00051197_events.npy"
-    plot_event_3d(npy_file_path)
+# 示例调用
+plot_event_paper_style("/home/wangzhe/ICRA2025/MY/DatasetRotation/Part3/120/slave_00051195_events.npy")

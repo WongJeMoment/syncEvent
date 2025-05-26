@@ -43,7 +43,7 @@ def npy_to_color_video(npy_path, video_path, resolution=(640, 480), fps=30):
     print(f"✅ Color video saved to: {video_path}")
 
 if __name__ == "__main__":
-    input_npy = "output/master_00051197_events.npy"
+    input_npy = "/home/wangzhe/ICRA2025/MY/DatasetRotation/Cube/120/master_00051197_events.npy"
     output_video = "output/master_00051197_color.avi"
     resolution = (1280, 720)  # 替换为你的相机分辨率
     fps = 300
