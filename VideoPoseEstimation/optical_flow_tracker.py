@@ -14,11 +14,11 @@ def track_keypoints(prev_gray, curr_gray, prev_pts, kf_bank=None, threshold=2.0)
         kf_bank = [PointKalman(pt.ravel()) for pt in prev_pts]
 
     lk_params = dict(
-        winSize=(91, 91),
-        maxLevel=9,
+        winSize=(61, 61),
+        maxLevel=4,
         flags=cv2.OPTFLOW_LK_GET_MIN_EIGENVALS,
         minEigThreshold=1e-5,
-        criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 1000, 0.01)
+        criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 50, 0.01)
     )
 
     # 光流前向 & 反向 & round-trip 检查
@@ -41,12 +41,19 @@ def track_keypoints(prev_gray, curr_gray, prev_pts, kf_bank=None, threshold=2.0)
     next_pts_fixed = np.zeros_like(prev_pts)
 
     for i, ok in enumerate(status):
+        pt_kf = kf_bank[i].predict()
+
         if ok:
-            pt = next_pts[i].ravel()
+            pt_lk = next_pts[i].ravel()
+            error = (forward_error[i] + round_trip_error[i]) / 2.0
+            confidence = np.exp(-error / threshold)  # 越小误差置信度越高
+            confidence = np.clip(confidence, 0.0, 1.0)
+            pt = confidence * pt_lk + (1 - confidence) * pt_kf
             kf_bank[i].correct(pt)
         else:
-            pt = kf_bank[i].predict()
+            pt = pt_kf
             status[i] = 0
+
         next_pts_fixed[i, 0] = pt
 
     return next_pts_fixed, status.reshape(-1, 1).astype(np.uint8)
