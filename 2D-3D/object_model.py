@@ -35,8 +35,8 @@ def visualize_stl_and_keypoints(file_path, keypoints, ids, unit="mm"):
     plt.show()
 
 if __name__ == "__main__":
-    stl_path = "/home/wangzhe/ICRA2025/MY/STL/cube/cube.STL"  # <- 替换成你的 STL 文件路径
-    json_path = "/home/wangzhe/ICRA2025/MY/STL/cube/cube.json"  # <- 替换成你的 JSON 路径
+    stl_path = "/home/wangzhe/ICRA2025/MY/STL/PART3/Part3.STL"  # <- 替换成你的 STL 文件路径
+    json_path = "/home/wangzhe/ICRA2025/MY/STL/PART3/Part3.json"  # <- 替换成你的 JSON 路径
 
     keypoints, ids = load_keypoints_from_json(json_path)
     visualize_stl_and_keypoints(stl_path, keypoints, ids)
