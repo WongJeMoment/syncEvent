@@ -6,6 +6,8 @@ import os
 def event_frame_browser(npy_path, resolution=(640, 480), frame_time_us=1000):
     print(f"📂 Loading events from: {npy_path}")
     events = np.load(npy_path)
+    print(f"📌 First event: x={events['x'][0]}, y={events['y'][0]}, t={events['t'][0]}, p={events['p'][0]}")
+
     width, height = resolution
 
     duration_us = events['t'][-1] - events['t'][0]
@@ -52,6 +54,6 @@ def event_frame_browser(npy_path, resolution=(640, 480), frame_time_us=1000):
 
 
 if __name__ == "__main__":
-    input_npy = "/home/wangzhe/ICRA2025/MY/DatasetRotation/Cube/120/master_00051197_events.npy"
-    resolution = (1280, 720)
-    event_frame_browser(input_npy, resolution, frame_time_us=1000)  # 每帧1ms
+    input_npy = "/home/wangzhe/ICRA2025/MY/EventTxtData/events.npy"
+    resolution = (1920, 1080)
+    event_frame_browser(input_npy, resolution, frame_time_us=10000)  # 每帧1ms
