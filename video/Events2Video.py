@@ -37,15 +37,24 @@ def npy_to_color_video(npy_path, video_path, resolution=(640, 480), fps=30):
                 else:
                     frame[y, x] = [255, 0, 0]   # 蓝色（负极性）
 
+        # 在左上角添加当前帧的最小时间戳信息（单位：秒）
+        if evs.size > 0:
+            min_t = evs['t'].min() / 1e6  # 转为秒
+            time_text = f"Time: {min_t:.6f}s"
+            cv2.putText(frame, time_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX,
+                        0.8, (0, 0, 0), 2, cv2.LINE_AA)  # 黑色文字描边
+            cv2.putText(frame, time_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX,
+                        0.8, (255, 255, 255), 1, cv2.LINE_AA)  # 白色文字
+
         video_writer.write(frame)
 
     video_writer.release()
     print(f"✅ Color video saved to: {video_path}")
 
 if __name__ == "__main__":
-    input_npy = "/home/wangzhe/ICRA2025/MY/DatasetRotation/Cube/120/master_00051197_events.npy"
-    output_video = "output/master_00051197_color.avi"
-    resolution = (1280, 720)  # 替换为你的相机分辨率
+    input_npy = "/home/wangzhe/ICRA2025/MY/EventTxtData/cropped_events.npy"
+    output_video = "/home/wangzhe/ICRA2025/MY/EventTxtData/events.avi"
+    resolution = (1920, 1080)  # 替换为你的相机分辨率
     fps = 300
 
     npy_to_color_video(input_npy, output_video, resolution, fps)
